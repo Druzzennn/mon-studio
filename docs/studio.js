@@ -20,8 +20,6 @@ const chatLog   = document.getElementById("chat-log");
 const chatInput = document.getElementById("chat-input");
 const chatSend  = document.getElementById("chat-send");
 
-const saveBtn   = document.getElementById("save");
-const previewBtn= document.getElementById("preview-btn");
 const pvSelect  = document.getElementById("preview-select");
 
 /* Mobile tabs */
@@ -72,11 +70,11 @@ function init(){
   chatInput.addEventListener("input", autoGrowChat);
   autoGrowChat();
 
-  // Code editor
+  // Code editor avec sauvegarde auto
   codeEl.addEventListener("input", () => {
     clearTimeout(typingTimer);
     typingTimer = setTimeout(() => { 
-      commit(); 
+      commitAuto(); 
       refreshPreview(); 
     }, 300);
   });
@@ -94,10 +92,6 @@ function init(){
   // Nouveau fichier
   newFileBtn.addEventListener("click", createNewFile);
 
-  // Save / Preview
-  saveBtn.addEventListener("click", () => commit());
-  previewBtn.addEventListener("click", () => refreshPreview(true));
-
   // Preview select
   pvSelect.addEventListener("change", onPreviewSelect);
 
@@ -108,7 +102,7 @@ function init(){
   document.addEventListener("keydown", e => {
     if ((e.ctrlKey || e.metaKey) && e.key === "s") {
       e.preventDefault();
-      commit();
+      commitAuto();
     }
   });
 
@@ -208,7 +202,7 @@ function openFile(name){
   refreshPreview();
 }
 
-function commit(){
+function commitAuto(){
   if (!current) return;
   fs[current] = codeEl.value;
   if (window.ai?.applyFiles) {
@@ -217,7 +211,6 @@ function commit(){
     saveFS(fs);
   }
   buildPreviewSelect();
-  showNotification("💾 Sauvegardé");
 }
 
 function createNewFile(){
