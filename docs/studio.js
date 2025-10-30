@@ -29,7 +29,7 @@ const mTabChat    = document.getElementById("m-tab-chat");
 let fs   = window.ai?.loadFS ? window.ai.loadFS() : {};
 let chat = loadChat();
 let current = null;
-let previewTarget = null; // toujours prévisualiser un HTML (index.html par défaut)
+let previewTarget = null; // fichier HTML à prévisualiser
 let typingTimer = null;
 
 /* ===== Init ===== */
@@ -42,16 +42,16 @@ function init(){
   openFirst();
   renderChat();
 
-  /* Tabs PC */
+  // Onglets PC
   tabChat.addEventListener("click", ()=>selectLeft("chat"));
   tabCode.addEventListener("click", ()=>selectLeft("code"));
 
-  /* Tabs Mobile (vue exclusive) */
+  // Onglets Mobile
   mTabPreview.addEventListener("click", ()=>selectMobile("preview"));
   mTabCode.addEventListener("click", ()=>{ selectLeft("code"); selectMobile("code"); });
   mTabChat.addEventListener("click", ()=>{ selectLeft("chat"); selectMobile("chat"); });
 
-  /* Chat */
+  // Chat
   chatSend.addEventListener("click", sendChat);
   chatInput.addEventListener("keydown", e=>{
     if (e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendChat(); }
@@ -59,22 +59,22 @@ function init(){
   chatInput.addEventListener("input", autoGrowChat);
   autoGrowChat();
 
-  /* Code editing */
+  // Code editing
   codeEl.addEventListener("input", ()=>{
     clearTimeout(typingTimer);
     typingTimer = setTimeout(()=>{ commit(); refreshPreview(); }, 150);
   });
 
-  /* Save/Preview */
+  // Save/Preview
   saveBtn.addEventListener("click", ()=> commit());
   previewBtn.addEventListener("click", ()=> refreshPreview(true));
 
-  /* Gutter (drag robuste) */
+  // Gutter
   setupGutter();
 
-  /* États init */
-  selectLeft("chat");         // PC : onglet Chat par défaut
-  selectMobile("preview");    // Mobile : Aperçu par défaut
+  // États init
+  selectLeft("chat");
+  selectMobile("preview");
 }
 
 /* ===== FS / Files ===== */
@@ -88,24 +88,20 @@ function saveFS(obj){ localStorage.setItem(FS_KEY, JSON.stringify(obj)); }
 function renderFiles(){
   listEl.innerHTML = "";
   Object.keys(fs).sort().forEach(name=>{
-    const li = document.createElement("li");
-    li.dataset.name = name;
+    const li=document.createElement("li");
+    li.dataset.name=name;
     li.className = name===current ? "active":"";
     li.textContent = name;
     li.addEventListener("click", ()=> openFile(name));
     listEl.appendChild(li);
   });
 }
-function openFirst(){
-  const first = Object.keys(fs)[0];
-  if (first) openFile(first);
-}
+function openFirst(){ const first = Object.keys(fs)[0]; if (first) openFile(first); }
 function openFile(name){
   if(!fs[name]) return;
   current = name;
   codeEl.value = fs[name];
   renderFiles();
-  // si c'est un HTML, on bascule la cible de preview sur ce fichier
   if (/\.html?$/i.test(name)) previewTarget = name;
   refreshPreview();
 }
@@ -126,15 +122,10 @@ function wrapDoc(inner){
 }
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function resolvePreviewTarget(){
-  // 1) si une cible HTML a été vue récemment
   if (previewTarget && fs[previewTarget]) return previewTarget;
-  // 2) index.html si dispo
   if (fs["index.html"]) return "index.html";
-  // 3) premier .html
   const h = Object.keys(fs).find(n=>/\.html?$/i.test(n));
-  if (h) return h;
-  // 4) sinon, le fichier courant
-  return current;
+  return h || current;
 }
 function makeDocForContent(s){
   const t = String(s||"");
@@ -151,7 +142,7 @@ function refreshPreview(force=false){
 }
 
 /* ===== Chat ===== */
-function loadChat(){ try{ const raw = localStorage.getItem(CHAT_KEY); return raw?JSON.parse(raw):[]; } catch{ return []; } }
+function loadChat(){ try{ const raw=localStorage.getItem(CHAT_KEY); return raw?JSON.parse(raw):[]; } catch{ return []; } }
 function saveChat(){ localStorage.setItem(CHAT_KEY, JSON.stringify(chat)); }
 function addMsg(role, text){ chat.push({ role, text, ts: Date.now() }); saveChat(); }
 function renderChat(){
@@ -168,8 +159,8 @@ function buildPromptFromChat(){
   const names = Object.keys(fs).join(", ");
   let convo =
 `Contexte projet. Fichiers existants: ${names}.
-Réponds en JSON strict {"files":{"path":"content"}, "reply":"texte court"} quand tu modifies/ajoutes des fichiers.
-Les fragments HTML sont acceptés pour le contenu. "reply" doit être un texte lisible, sans code, qui explique ce que tu as fait.
+Réponds en JSON strict {"files":{"path":"content"}, "reply":"texte concis expliquant ce que tu as fait et pourquoi"} quand tu modifies/ajoutes des fichiers.
+Fragments HTML acceptés pour le contenu. Pas de cadres \`\`\`, pas de prose hors JSON.
 
 Conversation:
 `;
@@ -189,24 +180,22 @@ async function sendChat(){
     const prompt = buildPromptFromChat();
     const res = await window.ai.generate(prompt);
 
-    // Afficher une vraie réponse si dispo
-    const reply = res?.reply || res?.message || res?.text || res?.raw || null;
+    // afficher une vraie réponse si dispo
+    const reply = res?.reply ? String(res.reply) : null;
 
     const files = res?.files || {};
     const keys = Object.keys(files);
 
     if (keys.length){
-      // Recharger FS (ai.js a déjà mergé), viser un HTML pour la preview
       fs = window.ai.loadFS();
       renderFiles();
       const target = keys.find(n=>/\.html?$/i.test(n)) || keys[0];
-      if (target) { previewTarget = /\.html?$/i.test(target) ? target : previewTarget; openFile(target); }
+      if (target) { if (/\.html?$/i.test(target)) previewTarget=target; openFile(target); }
     } else {
-      // Pas de fichiers renvoyés : garder la preview courante
       refreshPreview();
     }
 
-    addMsg("assistant", reply ? String(reply) : (keys.length ? `OK • ${keys.length} fichier(s) mis à jour` : `Aucune modification`));
+    addMsg("assistant", reply ?? (keys.length ? `OK • ${keys.length} fichier(s) mis à jour` : `Aucune modification`));
     renderChat();
   } catch(e){
     addMsg("assistant", "Erreur: " + String(e));
@@ -240,30 +229,32 @@ function selectMobile(which){
   } else if (which==="code"){
     document.body.classList.add("m-code");
     mTabCode.classList.add("active"); mTabPreview.classList.remove("active"); mTabChat.classList.remove("active");
+    selectLeft("code");
   } else {
     document.body.classList.add("m-chat");
     mTabChat.classList.add("active"); mTabPreview.classList.remove("active"); mTabCode.classList.remove("active");
+    selectLeft("chat");
   }
 }
 
-/* ===== Gutter (drag résilient, 20–80%, arrêt net au relâchement) ===== */
+/* ===== Gutter (drag robuste, 240px–(viewport-360px), arrêt net) ===== */
 function setupGutter(){
-  let dragging=false, pointerId=null, startX=0, startW=0;
+  let dragging=false, pid=null, startX=0, startW=0;
 
   const onMove = (e)=>{
     if(!dragging) return;
     const clientX = e.clientX ?? (e.touches && e.touches[0]?.clientX);
     if (clientX==null) return;
     const dx = clientX - startX;
-    const min = Math.max(320, window.innerWidth * 0.20);
-    const max = Math.max(320, window.innerWidth * 0.80);
-    const newW = Math.min(max, Math.max(min, startW + dx));
+    const minPx = 240;                         // min fixe
+    const maxPx = Math.max(360, window.innerWidth - 360); // laisse place à l'aperçu
+    const newW = Math.min(maxPx, Math.max(minPx, startW + dx));
     document.documentElement.style.setProperty("--leftw", newW+"px");
   };
-  const endDrag = ()=>{
+  const endDrag = (e)=>{
     if(!dragging) return;
     dragging=false;
-    if (pointerId!=null) { try{ gutter.releasePointerCapture(pointerId); }catch{} pointerId=null; }
+    if (pid!=null) { try{ gutter.releasePointerCapture(pid); }catch{} pid=null; }
     document.body.style.userSelect="";
     persistLeftWidth();
     window.removeEventListener("pointermove", onMove);
@@ -273,11 +264,11 @@ function setupGutter(){
   };
 
   gutter.addEventListener("pointerdown", (e)=>{
-    dragging=true; pointerId=e.pointerId;
+    dragging=true; pid=e.pointerId;
     startX=e.clientX; startW=leftPane.getBoundingClientRect().width;
-    try{ gutter.setPointerCapture(pointerId); }catch{}
+    try{ gutter.setPointerCapture(pid); }catch{}
     document.body.style.userSelect="none";
-    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointermove", onMove, { passive:true });
     window.addEventListener("pointerup", endDrag);
     window.addEventListener("pointercancel", endDrag);
     window.addEventListener("mouseleave", endDrag);
