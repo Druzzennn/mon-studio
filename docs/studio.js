@@ -2,7 +2,7 @@ const FS_KEY   = "studio.fs.v1";
 const CHAT_KEY = "studio.chat.v1";
 
 /* Refs */
-const framePC   = document.getElementById("frame");
+let framePC   = document.getElementById("frame");
 const leftPane  = document.getElementById("left");
 const gutter    = document.getElementById("gutter");
 const consoleEl = document.getElementById("console");
@@ -442,10 +442,23 @@ function refreshPreview(force = false){
   const tgt = resolvePreviewTarget();
   let content = fs[tgt.name] || "";
   const doc = makeDoc(content);
-  framePC.srcdoc = doc;
+  
+  // Recréer l'iframe pour isolation totale
+  const oldFrame = framePC;
+  const newFrame = document.createElement('iframe');
+  newFrame.id = 'frame';
+  newFrame.sandbox = 'allow-scripts';
+  newFrame.style.cssText = 'width:100%;height:100%;border:0;background:#0b1324;position:relative;z-index:1';
+  
+  oldFrame.parentNode.replaceChild(newFrame, oldFrame);
+  
+  // Réassigner la référence globale
+  window.framePC = newFrame;
+  
+  newFrame.srcdoc = doc;
   consoleEl.innerHTML = "";
   consoleEl.classList.remove("visible");
-  if (force) framePC.focus();
+  if (force) newFrame.focus();
 }
 
 /* Console capture */
