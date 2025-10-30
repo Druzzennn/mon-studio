@@ -29,10 +29,7 @@
     const fs = loadFS();
     const res = await aiFetch("/generate", { prompt, files: fs });
     if(res.error){
-      // fallback : répond quand même quelque chose d'utile
-      const reply = `[fallback] ${res.error}`;
-      const fallback = { files:{}, reply };
-      return { ok:false, ...fallback };
+      return { ok:false, files:{}, reply:`[erreur IA] ${res.error}` };
     }
     const norm = normalize(res);
     if(Object.keys(norm.files).length) applyFiles(norm.files);
