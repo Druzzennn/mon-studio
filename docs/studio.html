@@ -1,4 +1,4 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Studio</title><link rel="preconnect" href="https://cdn.jsdelivr.net"><style>html,body{height:100%;margin:0;font-family:system-ui,Arial}header{padding:8px 12px;border-bottom:1px solid #ddd;display:flex;gap:8px;align-items:center;flex-wrap:wrap}main{height:calc(100% - 49px);display:grid;grid-template-columns:260px 1fr 1fr}#files{border-right:1px solid #eee;overflow:auto}#files ul{list-style:none;margin:0;padding:8px}#files li{padding:6px 8px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}#files li.active{background:#eef2ff}#files .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#editor{border-right:1px solid #eee}textarea{width:100%;height:100%;border:0;outline:0;padding:12px;resize:none;font-family:ui-monospace,Consolas,monospace;font-size:14px}iframe{width:100%;height:100%;border:0}</style><script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script></head><body>
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Studio</title><link rel="preconnect" href="https://cdn.jsdelivr.net"><style>html,body{height:100%;margin:0;font-family:system-ui,Arial}header{padding:8px 12px;border-bottom:1px solid #ddd;display:flex;gap:8px;align-items:center;flex-wrap:wrap}header input#prompt{flex:1;min-width:240px;padding:6px 8px;border:1px solid #ddd;border-radius:8px}header output#status{min-width:120px;color:#555}main{height:calc(100% - 49px);display:grid;grid-template-columns:260px 1fr 1fr}#files{border-right:1px solid #eee;overflow:auto}#files ul{list-style:none;margin:0;padding:8px}#files li{padding:6px 8px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}#files li.active{background:#eef2ff}#files .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#editor{border-right:1px solid #eee}textarea{width:100%;height:100%;border:0;outline:0;padding:12px;resize:none;font-family:ui-monospace,Consolas,monospace;font-size:14px}iframe{width:100%;height:100%;border:0}</style><script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script></head><body>
 <header>
   <button id="new">Nouveau</button>
   <button id="rename">Renommer</button>
@@ -9,43 +9,64 @@
   <button id="download">Télécharger ZIP</button>
   <button id="import">Importer ZIP</button><input id="zip" type="file" accept=".zip" style="display:none">
   <button id="preview">Aperçu</button>
+  <input id="prompt" placeholder="Décris ce que tu veux générer">
+  <button id="ai-propose">IA Proposer</button>
+  <button id="ai-analyze">IA Analyser</button>
+  <button id="share">Partager</button>
   <button id="reset">Réinitialiser</button>
+  <output id="status"></output>
 </header>
 <main>
   <aside id="files"><ul id="list"></ul></aside>
   <section id="editor"><textarea id="code"></textarea></section>
   <section><iframe id="frame" sandbox="allow-scripts allow-same-origin"></iframe></section>
 </main>
+<script src="ai.js"></script>
 <script>
 const KEY="studio.fs.v1";
 const list=document.getElementById("list");
 const code=document.getElementById("code");
 const frame=document.getElementById("frame");
+const promptInput=document.getElementById("prompt");
+const statusOut=document.getElementById("status");
 let fs=loadFS();
 let current=null;
 let history={};let cursor={};
+let typingTimer=null;
+
+function setStatus(t){statusOut.textContent=t;}
+
 function loadFS(){const raw=localStorage.getItem(KEY);if(raw){try{return JSON.parse(raw);}catch(e){}}return {"index.html":"<!doctype html><html><head><meta charset='utf-8'><title>Exemple</title><style>body{font:16px/1.5 system-ui;margin:24px}</style></head><body><h1>Bonjour</h1><p>Modifie ce fichier puis clique Aperçu.</p></body></html>"};}
 function saveFS(){localStorage.setItem(KEY,JSON.stringify(fs));}
 function renderList(){list.innerHTML="";Object.keys(fs).sort().forEach(name=>{const li=document.createElement("li");li.dataset.name=name;li.className=name===current?"active":"";const span=document.createElement("span");span.className="name";span.textContent=name;const size=document.createElement("span");size.textContent=(new Blob([fs[name]]).size)+"o";li.appendChild(span);li.appendChild(size);li.onclick=()=>openFile(name);list.appendChild(li);});}
 function openFile(name){if(!fs[name])return;commitState();current=name;code.value=fs[name];renderList();resetHistoryIfNeeded(name);}
 function resetHistoryIfNeeded(name){if(!history[name]){history[name]=[fs[name]];cursor[name]=0;}else{cursor[name]=history[name].length-1;}}
 function commitState(){if(!current)return;const arr=history[current]||[fs[current]];const idx=cursor[current]??(arr.length-1);const latest=arr[idx];if(code.value!==latest){const next=arr.slice(0,idx+1);next.push(code.value);history[current]=next;cursor[current]=next.length-1;fs[current]=code.value;saveFS();}}
-function doUndo(){if(!current||!history[current])return;const i=cursor[current];if(i>0){cursor[current]=i-1;code.value=history[current][cursor[current]];fs[current]=code.value;saveFS();}}
-function doRedo(){if(!current||!history[current])return;const i=cursor[current];if(i<history[current].length-1){cursor[current]=i+1;code.value=history[current][cursor[current]];fs[current]=code.value;saveFS();}}
+function doUndo(){if(!current||!history[current])return;const i=cursor[current];if(i>0){cursor[current]=i-1;code.value=history[current][cursor[current]];fs[current]=code.value;saveFS();preview();}}
+function doRedo(){if(!current||!history[current])return;const i=cursor[current];if(i<history[current].length-1){cursor[current]=i+1;code.value=history[current][cursor[current]];fs[current]=code.value;saveFS();preview();}}
 function preview(){commitState();const blob=new Blob([fs[current]||""],{type:"text/html"});frame.src=URL.createObjectURL(blob);}
 function ensureSelection(){if(!current){const first=Object.keys(fs)[0];openFile(first);} }
+
 document.getElementById("new").onclick=()=>{let name=prompt("Nom du fichier","nouveau.html");if(!name)return;if(fs[name]){alert("Existe déjà");return;}fs[name]="";saveFS();renderList();openFile(name);}
 document.getElementById("rename").onclick=()=>{ensureSelection();if(!current)return;const nv=prompt("Nouveau nom",current);if(!nv||nv===current)return;if(fs[nv]){alert("Existe déjà");return;}fs[nv]=fs[current];delete fs[current];history[nv]=history[current];cursor[nv]=cursor[current];delete history[current];delete cursor[current];saveFS();renderList();openFile(nv);}
-document.getElementById("delete").onclick=()=>{ensureSelection();if(!current)return;if(!confirm("Supprimer "+current+" ?"))return;delete fs[current];delete history[current];delete cursor[current];saveFS();current=null;renderList();ensureSelection();}
+document.getElementById("delete").onclick=()=>{ensureSelection();if(!current)return;if(!confirm("Supprimer "+current+" ?"))return;delete fs[current];delete history[current];delete cursor[current];saveFS();current=null;renderList();ensureSelection();preview();}
 document.getElementById("undo").onclick=()=>{doUndo();};
 document.getElementById("redo").onclick=()=>{doRedo();};
-document.getElementById("save").onclick=()=>{commitState();alert("Enregistré");};
+document.getElementById("save").onclick=()=>{commitState();setStatus("Enregistré");preview();setTimeout(()=>setStatus(""),1000);};
 document.getElementById("download").onclick=async()=>{const zip=new JSZip();for(const [name,content] of Object.entries(fs)){zip.file(name,content);}const blob=await zip.generateAsync({type:"blob"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="projet.zip";a.click();URL.revokeObjectURL(a.href);};
 document.getElementById("import").onclick=()=>{document.getElementById("zip").click();};
-document.getElementById("zip").onchange=async e=>{const f=e.target.files[0];if(!f)return;const zip=await JSZip.loadAsync(f);let imported=0;for(const path of Object.keys(zip.files)){const file=zip.files[path];if(file.dir)continue;const content=await file.async("string");fs[path]=content;imported++;}if(imported===0){alert("ZIP vide");return;}saveFS();renderList();openFile(Object.keys(fs)[0]);};
+document.getElementById("zip").onchange=async e=>{const f=e.target.files[0];if(!f)return;const zip=await JSZip.loadAsync(f);let imported=0;for(const path of Object.keys(zip.files)){const file=zip.files[path];if(file.dir)continue;const content=await file.async("string");fs[path]=content;imported++;}if(imported===0){alert("ZIP vide");return;}saveFS();renderList();openFile(Object.keys(fs)[0]);preview();};
 document.getElementById("preview").onclick=()=>{preview();};
 document.getElementById("reset").onclick=()=>{if(!confirm("Réinitialiser le studio ?"))return;localStorage.removeItem(KEY);location.reload();};
-code.addEventListener("input",()=>{});
+
+code.addEventListener("input",()=>{clearTimeout(typingTimer);typingTimer=setTimeout(()=>{commitState();preview();},400);});
+
+document.getElementById("ai-propose").onclick=async()=>{setStatus("IA en cours");try{const res=await window.ai.generate(promptInput.value||"");if(res&&res.files){fs=window.ai.loadFS();renderList();const names=Object.keys(res.files);const target=names.includes("index.html")?"index.html":names[0];if(target)openFile(target);preview();}setStatus(res.summary?res.summary:"IA terminé");setTimeout(()=>setStatus(""),1500);}catch(e){setStatus("Erreur IA");}};
+document.getElementById("ai-analyze").onclick=async()=>{setStatus("Analyse en cours");try{const res=await window.ai.analyze();const html=["<!doctype html><meta charset='utf-8'><title>Analyse</title><style>body{font:14px system-ui;margin:20px;line-height:1.5}h2{margin:16px 0 8px}ul{padding-left:18px}</style><h1>Analyse</h1>",section("Problèmes",res.issues),section("Actions",res.actions),section("Avertissements",res.warnings)].join("");frame.srcdoc=html;setStatus("Analyse affichée");setTimeout(()=>setStatus(""),1500);}catch(e){setStatus("Erreur analyse");}};
+function section(title,items){const arr=Array.isArray(items)?items:[];return "<h2>"+title+"</h2><ul>"+arr.map(x=>"<li>"+String(x)+"</li>").join("")+"</ul>";}
+
+document.getElementById("share").onclick=async()=>{commitState();const data=btoa(unescape(encodeURIComponent(JSON.stringify(fs))));const link=location.origin+location.pathname+"#data="+encodeURIComponent(data);try{await navigator.clipboard.writeText(link);alert("Lien copié");}catch(e){prompt("Copie le lien",link);}};
+
 renderList();ensureSelection();preview();
 </script>
 </body></html>
