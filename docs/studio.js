@@ -1,18 +1,21 @@
-// Anti-double init et mode purge via ?nocache=1
-if (window.__studioBooted) { /* évite doublons SW/HTML */ throw new Error("booted"); }
+// Garde-fou anti-doublon
+if (window.__studioBooted) throw new Error("booted-once");
 window.__studioBooted = true;
 
-(async ()=>{ 
-  if (new URLSearchParams(location.search).has("nocache")) {
+(async () => {
+  // Purge on-demand
+  if (new URLSearchParams(location.search).get("purge") === "1") {
     try {
-      if ("caches" in self) { for (const k of await caches.keys()) await caches.delete(k); }
-      if (navigator.serviceWorker) { const regs = await navigator.serviceWorker.getRegistrations(); for (const r of regs) await r.unregister(); }
+      if ("caches" in self) for (const k of await caches.keys()) await caches.delete(k);
+      if (navigator.serviceWorker) for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister();
       localStorage.clear();
-    } finally { location.replace(location.pathname); }
+    } finally {
+      location.replace(location.pathname);
+    }
     return;
   }
 
-  const KEY = "studio.fs.v7"; // nouvelle clé = état propre
+  const KEY = "studio.fs.clean.1"; // nouvelle clé
   const list = document.getElementById("list");
   const code = document.getElementById("code");
   const frame = document.getElementById("frame");
@@ -24,17 +27,129 @@ window.__studioBooted = true;
   let typingTimer = null;
 
   applyMobile();
-  sanitizeFS();            // nettoie un index.html “dumpé”
+  sanitizeFS(); // nettoie index.html pollué
   renderList();
+  const first = Object.keys(fs)[0]; if (first) openFile(first); else preview("");
 
-  const first = Object.keys(fs)[0];
-  if (first) openFile(first); else preview("");
-
-  document.getElementById("save").onclick = ()=>{ commit(); flash("Enregistré"); };
-  document.getElementById("preview").onclick = ()=> preview(fs[current]||"");
+  document.getElementById("save").onclick = () => { commit(); flash("Enregistré"); };
+  document.getElementById("preview").onclick = () => preview(fs[current] || "");
   document.getElementById("ai-propose").onclick = generateAI;
+  code.addEventListener("input", () => {
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => { commit(); preview(fs[current] || ""); }, 250);
+  });
 
-  code.addEventListener("input", ()=>{
+  // IMPORTANT: pas de Service Worker tant que l'affichage n'est pas stable
+  // (sw.js supprimé)
+
+  /* ---------- FS ---------- */
+  function loadFS() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      return raw ? JSON.parse(raw) : {
+        "index.html": "<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>"
+      };
+    } catch {
+      return {"index.html":"<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>"};
+    }
+  }
+  function saveFS(){ localStorage.setItem(KEY, JSON.stringify(fs)); }
+  function renderList(){
+    list.innerHTML = "";
+    Object.keys(fs).sort().forEach(name=>{
+      const li = document.createElement("li");
+      li.dataset.name = name;
+      li.className = name===current ? "active":"";
+      const span = document.createElement("span"); span.textContent = name;
+      li.append(span);
+      li.onclick = ()=> openFile(name);
+      list.appendChild(li);
+    });
+  }
+  function openFile(name){
+    if(!fs[name]) return;
+    current = name;
+    code.value = fs[name];
+    renderList();
+    preview(fs[name]);
+    if(document.body.classList.contains("mobile")) setView("editor");
+  }
+  function commit(){ if(!current) return; fs[current]=code.value; saveFS(); }
+
+  /* ---------- Preview ---------- */
+  function preview(html){
+    const s = String(html||"");
+    const isHTML = /^\s*<!doctype|^\s*<html|^\s*<head|^\s*<body/i.test(s);
+    frame.srcdoc = isHTML
+      ? s
+      : `<!doctype html><meta charset="utf-8"><title>Aperçu</title>
+         <pre style="margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap">${escapeHTML(s)}</pre>`;
+    if(document.body.classList.contains("mobile")) setView("preview");
+  }
+
+  /* ---------- IA ---------- */
+  async function generateAI(){
+    const query = promptInput.value.trim();
+    if(!query){ flash("Décris d'abord"); return; }
+    flash("Génération…");
+    try{
+      // fournie par ai.js
+      const res = await window.ai.generate(query);
+      if(!res || !res.files){ flash("Aucune sortie"); return; }
+      for (const [path, content] of Object.entries(res.files)) {
+        if (typeof content === "string") fs[path] = content;
+      }
+      saveFS(); renderList();
+      const htmlTarget = Object.keys(res.files).find(n=>/\.html?$/i.test(n)) || Object.keys(res.files)[0];
+      if (htmlTarget) openFile(htmlTarget);
+      flash("OK");
+    } catch(e) {
+      console.error(e); flash("Erreur IA");
+    }
+  }
+
+  /* ---------- Sanitize ---------- */
+  function sanitizeFS(){
+    // Si un .html contient du JS/CSS de l'app collé en texte, on réinitialise.
+    const sig = ["document.getElementById(\"ai-propose\")","const KEY =","openFile(name)","function applyMobile"];
+    const fallback = "<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>";
+    let changed = false;
+    for (const [name, content] of Object.entries(fs)) {
+      if (!/\.html?$/i.test(name)) continue;
+      const txt = String(content||"");
+      const looksDump = sig.some(s => txt.includes(s));
+      const hasScriptTag = /<script[\s>]/i.test(txt);
+      if (looksDump && !hasScriptTag) { fs[name] = fallback; changed = true; }
+    }
+    if (changed) saveFS();
+  }
+
+  /* ---------- Mobile ---------- */
+  function applyMobile(){
+    const mobile = matchMedia("(max-width:900px)").matches;
+    if(mobile){
+      document.body.classList.add("mobile");
+      tabsBar.style.display = "flex";
+      tabsBar.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+        tabsBar.querySelectorAll("button").forEach(x=>x.classList.remove("active"));
+        b.classList.add("active");
+        setView(b.dataset.v);
+      });
+    }else{
+      document.body.classList.remove("mobile");
+      tabsBar.style.display = "none";
+      setView("files");
+    }
+  }
+  function setView(v){
+    document.body.className = document.body.className.replace(/view-\w+/,"").trim();
+    document.body.classList.add("view-"+v);
+  }
+
+  /* ---------- Utils ---------- */
+  function escapeHTML(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+  function flash(t){ promptInput.value=""; promptInput.placeholder=t; setTimeout(()=>promptInput.placeholder="Décris ce que tu veux générer",1500); }
+})();  code.addEventListener("input", ()=>{
     clearTimeout(typingTimer);
     typingTimer = setTimeout(()=>{ commit(); preview(fs[current]||""); }, 250);
   });
