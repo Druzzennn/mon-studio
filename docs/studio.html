@@ -1,173 +1,652 @@
-<!doctype html>
+const FS_KEY   = "studio.fs.v1";
+const CHAT_KEY = "studio.chat.v1";
+
+/* Refs - framePC sera réassigné dynamiquement */
+let framePC = null;
+const leftPane  = document.getElementById("left");
+const gutter    = document.getElementById("gutter");
+const consoleEl = document.getElementById("console");
+
+const tabChat   = document.getElementById("tab-chat");
+const tabCode   = document.getElementById("tab-code");
+const chatPanel = document.getElementById("chat-panel");
+const codePanel = document.getElementById("code-panel");
+
+const listEl    = document.getElementById("list");
+const codeEl    = document.getElementById("code");
+const newFileBtn= document.getElementById("new-file");
+
+const chatLog   = document.getElementById("chat-log");
+const chatInput = document.getElementById("chat-input");
+const chatSend  = document.getElementById("chat-send");
+
+const pvSelect  = document.getElementById("preview-select");
+
+/* Mobile tabs */
+const mTabPreview = document.getElementById("m-tab-preview");
+const mTabCode    = document.getElementById("m-tab-code");
+const mTabChat    = document.getElementById("m-tab-chat");
+
+/* State */
+let fs         = window.ai?.loadFS ? window.ai.loadFS() : {};
+let chat       = loadChat();
+let current    = null;
+let typingTimer= null;
+
+/* Prévisualisation */
+let pvMode = localStorage.getItem("studio.pvMode") || "auto";
+let pvFile = localStorage.getItem("studio.pvFile") || "";
+
+/* Boot */
+init();
+
+function init(){
+  framePC = document.getElementById("frame");
+  
+  ensureDefaultFS();
+  restoreLeftWidth();
+  renderFiles();
+  openFirst();
+  buildPreviewSelect();
+  renderChat();
+  refreshPreview();
+  setupConsoleCapture();
+
+  // Onglets PC - AVEC stopPropagation pour éviter les conflits
+  tabChat.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectLeft("chat");
+  }, true);
+  
+  tabCode.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectLeft("code");
+  }, true);
+
+  // Onglets Mobile - AVEC stopPropagation
+  mTabPreview.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectMobile("preview");
+  }, true);
+  
+  mTabCode.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectMobile("code");
+  }, true);
+  
+  mTabChat.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectMobile("chat");
+  }, true);
+
+  // Chat
+  chatSend.addEventListener("click", (e) => {
+    e.stopPropagation();
+    sendChat();
+  }, true);
+  
+  chatInput.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { 
+      e.preventDefault(); 
+      e.stopPropagation();
+      sendChat(); 
+    }
+  }, true);
+  
+  chatInput.addEventListener("input", autoGrowChat);
+  autoGrowChat();
+
+  // Code editor avec sauvegarde auto
+  codeEl.addEventListener("input", () => {
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => { 
+      commitAuto(); 
+      refreshPreview(); 
+    }, 300);
+  });
+  
+  codeEl.addEventListener("keydown", e => {
+    // Tab indentation
+    if (e.key === "Tab") {
+      e.preventDefault();
+      e.stopPropagation();
+      const start = codeEl.selectionStart;
+      const end = codeEl.selectionEnd;
+      codeEl.value = codeEl.value.substring(0, start) + "  " + codeEl.value.substring(end);
+      codeEl.selectionStart = codeEl.selectionEnd = start + 2;
+    }
+  }, true);
+
+  // Nouveau fichier
+  newFileBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    createNewFile();
+  }, true);
+
+  // Preview select
+  pvSelect.addEventListener("change", (e) => {
+    e.stopPropagation();
+    onPreviewSelect();
+  }, true);
+
+  // Gutter
+  setupGutter();
+
+  // Raccourcis clavier
+  document.addEventListener("keydown", e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      e.preventDefault();
+      e.stopPropagation();
+      commitAuto();
+    }
+  }, true);
+
+  // États init
+  selectLeft("chat");
+  selectMobile("preview");
+}
+
+/* Files */
+function ensureDefaultFS(){
+  if (!Object.keys(fs).length) {
+    fs["index.html"] = `<!doctype html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0f17">
-  <title>Studio</title>
-  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mon Projet</title>
   <style>
-    :root{
-      --bg:#0b0f17; --panel:#0f1522; --line:#1f2937; --text:#e5e7eb; --accent:#5b21b6;
-      --leftw:50vw;
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: system-ui, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
     }
-    *{box-sizing:border-box}
-    html,body{height:100%;margin:0}
-    body{display:flex;flex-direction:column;background:var(--bg);color:var(--text);font:14px/1.6 system-ui,Roboto,Arial;overflow:hidden}
-
-    header{display:flex;gap:8px;align-items:center;padding:10px 12px;background:#0f1522;border-bottom:1px solid var(--line)}
-    header b{font-weight:600}
-    select,button{border:1px solid var(--line);border-radius:8px;height:34px;background:#141c2e;color:var(--text)}
-    button{padding:0 12px;cursor:pointer;transition:all 0.2s}
-    button:hover{background:#1a2847}
-    button.primary{background:var(--accent);border-color:var(--accent)}
-    button.primary:hover{background:#6d28d9}
-    button:disabled{opacity:0.5;cursor:not-allowed}
-    #preview-select{min-width:180px;padding:0 8px}
-
-    /* PC split */
-    main#layout{
-      flex:1; min-height:0; display:grid;
-      grid-template-columns: var(--leftw) 8px 1fr;
+    .container {
+      text-align: center;
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+      padding: 40px;
+      border-radius: 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
     }
-    aside#left{min-width:320px;min-height:0;background:#0f1522;border-right:1px solid var(--line);display:flex;flex-direction:column}
-    #gutter{background:#14213d;cursor:col-resize}
-    section#preview{min-width:0;min-height:0;background:#0b1324;position:relative;isolation:isolate}
-    #frame{width:100%;height:100%;border:0;background:#0b1324;position:relative;z-index:1}
-    
-    /* Console d'erreurs */
-    #console{position:absolute;bottom:0;left:0;right:0;max-height:200px;background:#1a0a0a;border-top:2px solid #dc2626;color:#fca5a5;font:12px ui-monospace,monospace;overflow:auto;padding:8px;display:none}
-    #console.visible{display:block}
-    #console .error{padding:4px 0;border-bottom:1px solid #7f1d1d}
-
-    /* Onglets PC */
-    .side-tabs{display:flex;gap:8px;padding:8px;border-bottom:1px solid var(--line);background:#0f1522;position:sticky;top:0;z-index:1}
-    .side-tabs button{flex:1;border:1px solid var(--line);background:#121a2e;color:var(--text);padding:8px;border-radius:8px;transition:all 0.2s}
-    .side-tabs button:hover{background:#1a2847}
-    .side-tabs button.active{background:#18233c}
-    
-    .panel{flex:1;min-height:0;display:none;flex-direction:column}
-    .panel.active{display:flex}
-
-    /* Code */
-    #code-panel{flex-direction:column}
-    #files{border-bottom:1px solid var(--line);min-height:120px;max-height:40%;overflow:auto;background:#0c1323}
-    #files-header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#0a0f1a;border-bottom:1px solid var(--line)}
-    #files-header h3{margin:0;font-size:13px;font-weight:600;color:#9ca3af}
-    #files-actions{display:flex;gap:6px}
-    #files-actions button{height:28px;padding:0 10px;font-size:12px}
-    #files ul{list-style:none;margin:0;padding:8px}
-    #files li{padding:8px 12px;border-radius:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:all 0.15s}
-    #files li:hover{background:#0f1729}
-    #files li.active{background:#121a35}
-    #files li .file-name{flex:1}
-    #files li .file-delete{opacity:0;color:#dc2626;font-size:11px;padding:2px 6px;border-radius:4px;transition:opacity 0.2s}
-    #files li:hover .file-delete{opacity:1}
-    #files li .file-delete:hover{background:#7f1d1d}
-    
-    #editor{flex:1;display:flex;min-height:0}
-    #code{flex:1;min-height:0;width:100%;height:100%;border:0;outline:0;padding:14px 16px;background:#0b1324;color:#e5e7eb;font-family:ui-monospace,Consolas,Menlo,monospace;white-space:pre;overflow:auto;tab-size:2}
-
-    /* Chat */
-    #chat-panel{flex-direction:column}
-    #chat-log{flex:1;min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px;background:#0b1324}
-    .msg{max-width:90%;padding:10px 12px;border-radius:12px;white-space:pre-wrap;animation:fadeIn 0.3s}
-    @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-    .user{align-self:flex-end;background:#1b2a55}
-    .bot{align-self:flex-start;background:#141c2e}
-    .bot.error{background:#7f1d1d;color:#fca5a5}
-    #chat-input-row{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line);background:#0f1522}
-    #chat-input{flex:1;min-height:64px;max-height:180px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#0b1324;color:var(--text);resize:vertical;font-family:inherit}
-    #chat-send{height:auto;padding:8px 14px}
-
-    /* Mobile: Tabs en haut, UNE seule vue */
-    .m-tabs{display:none}
-    @media (max-width:900px){
-      .m-tabs{display:flex;gap:8px;padding:8px 12px;background:#0f1522;border-bottom:1px solid var(--line)}
-      .m-tabs button{flex:1;border:1px solid var(--line);background:#121a2e;color:var(--text);padding:10px;border-radius:8px;font-size:13px}
-      .m-tabs button.active{background:#18233c;border-color:#5b21b6}
-
-      #gutter{display:none !important;}
-      main#layout{grid-template-columns:1fr}
-      
-      /* MASQUER tout par défaut */
-      aside#left{display:none !important;}
-      section#preview{display:none !important;}
-      
-      /* Afficher selon le mode mobile actif */
-      body.m-view-preview section#preview{display:block !important;}
-      body.m-view-code aside#left{display:flex !important;}
-      body.m-view-chat aside#left{display:flex !important;}
-      
-      /* Masquer les tabs PC en mobile */
-      body.m-view-code .side-tabs,
-      body.m-view-chat .side-tabs{display:none !important;}
-      
-      /* Forcer l'affichage du bon panel en mobile */
-      body.m-view-code #code-panel{display:flex !important;}
-      body.m-view-code #chat-panel{display:none !important;}
-      body.m-view-chat #chat-panel{display:flex !important;}
-      body.m-view-chat #code-panel{display:none !important;}
+    h1 {
+      font-size: 3em;
+      margin: 0 0 20px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
     }
   </style>
 </head>
-<body class="m-view-preview">
-  <header>
-    <b>Studio</b>
-    <label style="margin-left:12px">Aperçu:</label>
-    <select id="preview-select" title="Fichier à prévisualiser"></select>
-  </header>
-
-  <!-- Tabs Mobile (une seule vue à la fois) -->
-  <div class="m-tabs">
-    <button id="m-tab-preview" class="active">👁️ Aperçu</button>
-    <button id="m-tab-code">💻 Code</button>
-    <button id="m-tab-chat">💬 Chat IA</button>
+<body>
+  <div class="container">
+    <h1>🚀 Bienvenue</h1>
+    <p>Commencez à créer avec l'IA !</p>
   </div>
-
-  <main id="layout">
-    <aside id="left">
-      <!-- Tabs PC (visible uniquement sur desktop) -->
-      <div class="side-tabs">
-        <button id="tab-chat" class="active">💬 Chat IA</button>
-        <button id="tab-code">💻 Code</button>
-      </div>
-
-      <!-- Panel Chat -->
-      <section id="chat-panel" class="panel active">
-        <div id="chat-log"></div>
-        <div id="chat-input-row">
-          <textarea id="chat-input" placeholder="Décris ce que tu veux créer ou modifier...&#10;Exemple: 'crée une page avec un carré blanc centré'"></textarea>
-          <button id="chat-send" class="primary" type="button">Envoyer</button>
-        </div>
-      </section>
-
-      <!-- Panel Code -->
-      <section id="code-panel" class="panel">
-        <div id="files">
-          <div id="files-header">
-            <h3>📁 Fichiers</h3>
-            <div id="files-actions">
-              <button id="new-file" title="Nouveau fichier">+ Nouveau</button>
-            </div>
-          </div>
-          <ul id="list"></ul>
-        </div>
-        <div id="editor">
-          <textarea id="code" spellcheck="false"></textarea>
-        </div>
-      </section>
-    </aside>
-
-    <div id="gutter" aria-label="Redimensionner"></div>
-
-    <section id="preview">
-      <iframe id="frame" sandbox="allow-scripts" style="pointer-events: auto;"></iframe>
-      <div id="console"></div>
-    </section>
-  </main>
-
-  <script src="ai.js?v=10"></script>
-  <script type="module" src="studio.js?v=10"></script>
 </body>
-</html>
+</html>`;
+    saveFS(fs);
+  }
+}
+
+function saveFS(obj){ 
+  localStorage.setItem(FS_KEY, JSON.stringify(obj)); 
+}
+
+function renderFiles(){
+  listEl.innerHTML = "";
+  Object.keys(fs).sort().forEach(name => {
+    const li = document.createElement("li");
+    li.dataset.name = name;
+    li.className = name === current ? "active" : "";
+    
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "file-name";
+    nameSpan.textContent = name;
+    li.appendChild(nameSpan);
+    
+    const delBtn = document.createElement("span");
+    delBtn.className = "file-delete";
+    delBtn.textContent = "🗑️";
+    delBtn.title = "Supprimer";
+    delBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      deleteFile(name);
+    }, true);
+    li.appendChild(delBtn);
+    
+    li.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openFile(name);
+    }, true);
+    
+    listEl.appendChild(li);
+  });
+}
+
+function openFirst(){ 
+  const first = Object.keys(fs).sort()[0]; 
+  if (first) openFile(first); 
+}
+
+function openFile(name){
+  if (!fs[name]) return;
+  current = name;
+  codeEl.value = fs[name];
+  renderFiles();
+  refreshPreview();
+}
+
+function commitAuto(){
+  if (!current) return;
+  fs[current] = codeEl.value;
+  if (window.ai?.applyFiles) {
+    window.ai.applyFiles({[current]: codeEl.value});
+  } else {
+    saveFS(fs);
+  }
+  buildPreviewSelect();
+}
+
+function createNewFile(){
+  const name = prompt("Nom du fichier (ex: style.css, script.js):");
+  if (!name || !name.trim()) return;
+  
+  const safeName = name.trim();
+  if (fs[safeName]) {
+    alert("Ce fichier existe déjà !");
+    return;
+  }
+  
+  const ext = safeName.split(".").pop().toLowerCase();
+  let template = "";
+  
+  if (ext === "html") {
+    template = `<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nouveau</title>
+</head>
+<body>
+  <h1>Nouveau fichier</h1>
+</body>
+</html>`;
+  } else if (ext === "css") {
+    template = `/* ${safeName} */\n\nbody {\n  margin: 0;\n  padding: 0;\n}\n`;
+  } else if (ext === "js") {
+    template = `// ${safeName}\n\nconsole.log("Hello from ${safeName}");\n`;
+  }
+  
+  fs[safeName] = template;
+  saveFS(fs);
+  renderFiles();
+  buildPreviewSelect();
+  openFile(safeName);
+  showNotification("✅ Fichier créé");
+}
+
+function deleteFile(name){
+  if (!confirm(`Supprimer ${name} ?`)) return;
+  delete fs[name];
+  saveFS(fs);
+  renderFiles();
+  buildPreviewSelect();
+  if (current === name) {
+    openFirst();
+  }
+  showNotification("🗑️ Fichier supprimé");
+}
+
+function showNotification(text){
+  const notif = document.createElement("div");
+  notif.textContent = text;
+  notif.style.cssText = "position:fixed;top:20px;right:20px;background:#18233c;color:#e5e7eb;padding:12px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:99999;animation:slideIn 0.3s;pointer-events:none";
+  document.body.appendChild(notif);
+  setTimeout(() => {
+    notif.style.animation = "slideOut 0.3s";
+    setTimeout(() => notif.remove(), 300);
+  }, 2000);
+}
+
+/* Preview select */
+function buildPreviewSelect(){
+  const old = pvSelect.value;
+  pvSelect.innerHTML = "";
+  
+  const optAuto = new Option("🔄 Auto (index.html)", "auto");
+  pvSelect.add(optAuto);
+
+  const htmls = Object.keys(fs).filter(n => /\.html?$/i.test(n)).sort();
+  for (const h of htmls) { 
+    pvSelect.add(new Option(`📄 ${h}`, "file:" + h)); 
+  }
+
+  pvSelect.add(new Option("✂️ Fragment (fichier courant)", "fragment-current"));
+
+  if (pvMode === "file:" + pvFile && !fs[pvFile]) pvMode = "auto";
+  pvSelect.value = (pvMode === "auto" || pvMode === "fragment-current" || pvMode.startsWith("file:")) ? pvMode : "auto";
+}
+
+function onPreviewSelect(){
+  pvMode = pvSelect.value;
+  if (pvMode.startsWith("file:")) pvFile = pvMode.slice(5);
+  localStorage.setItem("studio.pvMode", pvMode);
+  localStorage.setItem("studio.pvFile", pvFile);
+  refreshPreview(true);
+}
+
+/* Preview rendering avec support multi-fichiers */
+function isFullDoc(s){ 
+  return /^\s*<!doctype|^\s*<html|^\s*<head|^\s*<body/i.test(s); 
+}
+
+function looksLikeFragment(s){ 
+  return /<([a-zA-Z][\w:-]*)(\s[^>]*)?>/m.test(s); 
+}
+
+function esc(s){
+  return String(s).replace(/[&<>"']/g, m => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[m]));
+}
+
+function wrapDoc(inner){
+  return `<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aperçu</title>
+  <style>
+    body {
+      margin: 16px;
+      font-family: system-ui, -apple-system, sans-serif;
+      color: #e5e7eb;
+      background: #0b1324;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>${inner}</body>
+</html>`;
+}
+
+function resolvePreviewTarget(){
+  if (pvMode === "fragment-current") return { mode: "fragment", name: current };
+  if (pvMode.startsWith("file:"))  return { mode: "file", name: pvFile };
+  
+  // Auto
+  if (fs["index.html"]) return { mode: "file", name: "index.html" };
+  const h = Object.keys(fs).find(n => /\.html?$/i.test(n));
+  if (h) return { mode: "file", name: h };
+  return { mode: "fragment", name: current };
+}
+
+function injectExternalFiles(html){
+  // Injecter CSS et JS externes dans le HTML
+  const cssFiles = Object.keys(fs).filter(n => /\.css$/i.test(n));
+  const jsFiles = Object.keys(fs).filter(n => /\.js$/i.test(n));
+  
+  let result = html;
+  
+  // Injecter CSS avant </head>
+  if (cssFiles.length && result.includes("</head>")) {
+    const styles = cssFiles.map(f => `<style data-file="${f}">\n${fs[f]}\n</style>`).join("\n");
+    result = result.replace("</head>", styles + "\n</head>");
+  }
+  
+  // Injecter JS avant </body>
+  if (jsFiles.length && result.includes("</body>")) {
+    const scripts = jsFiles.map(f => `<script data-file="${f}">\n${fs[f]}\n</script>`).join("\n");
+    result = result.replace("</body>", scripts + "\n</body>");
+  }
+  
+  return result;
+}
+
+function makeDoc(s){
+  const t = String(s || "");
+  
+  if (isFullDoc(t)) {
+    return injectExternalFiles(t);
+  }
+  
+  if (looksLikeFragment(t)) {
+    return injectExternalFiles(wrapDoc(t));
+  }
+  
+  // Texte brut
+  return wrapDoc(`<pre style="margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap">${esc(t)}</pre>`);
+}
+
+function refreshPreview(force = false){
+  const tgt = resolvePreviewTarget();
+  let content = fs[tgt.name] || "";
+  const doc = makeDoc(content);
+  
+  // Ne PAS recréer l'iframe, juste mettre à jour srcdoc
+  if (!framePC) {
+    framePC = document.getElementById("frame");
+  }
+  
+  framePC.srcdoc = doc;
+  consoleEl.innerHTML = "";
+  consoleEl.classList.remove("visible");
+  if (force && framePC) framePC.focus();
+}
+
+/* Console capture */
+function setupConsoleCapture(){
+  window.addEventListener("message", e => {
+    if (e.data && e.data.type === "console") {
+      addConsoleMessage(e.data.level, e.data.message);
+    }
+  });
+}
+
+function addConsoleMessage(level, msg){
+  const div = document.createElement("div");
+  div.className = "error";
+  div.textContent = `[${level.toUpperCase()}] ${msg}`;
+  consoleEl.appendChild(div);
+  consoleEl.classList.add("visible");
+}
+
+/* Chat */
+function loadChat(){ 
+  try { 
+    const raw = localStorage.getItem(CHAT_KEY); 
+    return raw ? JSON.parse(raw) : []; 
+  } catch { 
+    return []; 
+  } 
+}
+
+function saveChat(){ 
+  localStorage.setItem(CHAT_KEY, JSON.stringify(chat)); 
+}
+
+function addMsg(role, text, isError = false){ 
+  chat.push({ role, text, ts: Date.now(), error: isError }); 
+  saveChat(); 
+}
+
+function renderChat(){
+  chatLog.innerHTML = "";
+  for (const m of chat) {
+    const n = document.createElement("div");
+    n.className = "msg " + (m.role === "user" ? "user" : "bot");
+    if (m.error) n.classList.add("error");
+    n.textContent = m.text;
+    chatLog.appendChild(n);
+  }
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+async function sendChat(){
+  const txt = chatInput.value.trim();
+  if (!txt) return;
+  
+  addMsg("user", txt); 
+  renderChat();
+  chatInput.value = ""; 
+  autoGrowChat();
+  lockChat(true);
+
+  try {
+    const history = chat.slice(-20).map(m => ({ role: m.role, text: m.text }));
+    const res = await window.ai.generate(txt, history);
+    
+    const files = res?.files || {};
+    const keys = Object.keys(files);
+
+    if (keys.length) {
+      fs = window.ai.loadFS();
+      renderFiles();
+      
+      // Si HTML modifié, basculer l'aperçu
+      const changedHtml = keys.find(n => /\.html?$/i.test(n));
+      if (changedHtml) {
+        pvMode = "file:" + changedHtml; 
+        pvFile = changedHtml;
+        localStorage.setItem("studio.pvMode", pvMode);
+        localStorage.setItem("studio.pvFile", pvFile);
+        buildPreviewSelect();
+        pvSelect.value = "file:" + changedHtml;
+      } else {
+        buildPreviewSelect();
+      }
+      
+      openFile(keys[0]);
+    } else {
+      refreshPreview();
+    }
+
+    const reply = res?.reply 
+      ? String(res.reply) 
+      : (keys.length ? `✅ Fichiers modifiés: ${keys.join(", ")}` : `ℹ️ Aucune modification. Reformule ta demande si besoin.`);
+    
+    addMsg("assistant", reply);
+    renderChat();
+    
+  } catch(e) {
+    addMsg("assistant", "❌ Erreur: " + String(e), true);
+    renderChat();
+  } finally {
+    lockChat(false);
+  }
+}
+
+function autoGrowChat(){
+  chatInput.style.height = "auto";
+  chatInput.style.height = Math.min(Math.max(chatInput.scrollHeight, 64), 180) + "px";
+}
+
+function lockChat(b){
+  chatSend.disabled = b;
+  chatInput.disabled = b;
+  chatSend.textContent = b ? "⏳ IA..." : "Envoyer";
+}
+
+/* Tabs / Layout */
+function selectLeft(which){
+  const isChat = which === "chat";
+  tabChat.classList.toggle("active", isChat);
+  tabCode.classList.toggle("active", !isChat);
+  chatPanel.classList.toggle("active", isChat);
+  codePanel.classList.toggle("active", !isChat);
+}
+
+function selectMobile(which){
+  document.body.classList.remove("m-view-preview", "m-view-code", "m-view-chat");
+  mTabPreview.classList.remove("active");
+  mTabCode.classList.remove("active");
+  mTabChat.classList.remove("active");
+  
+  if (which === "preview") {
+    document.body.classList.add("m-view-preview");
+    mTabPreview.classList.add("active");
+  } else if (which === "code") {
+    document.body.classList.add("m-view-code");
+    mTabCode.classList.add("active");
+  } else if (which === "chat") {
+    document.body.classList.add("m-view-chat");
+    mTabChat.classList.add("active");
+  }
+}
+
+/* Gutter */
+function setupGutter(){
+  let dragging = false, pid = null, startX = 0, startW = 0;
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    const clientX = e.clientX ?? (e.touches && e.touches[0]?.clientX);
+    if (clientX == null) return;
+    const dx = clientX - startX;
+    const minPx = 240;
+    const maxPx = Math.max(360, window.innerWidth - 360);
+    const newW = Math.min(maxPx, Math.max(minPx, startW + dx));
+    document.documentElement.style.setProperty("--leftw", newW + "px");
+  };
+  
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging = false;
+    if (pid != null) { 
+      try { gutter.releasePointerCapture(pid); } catch {} 
+      pid = null; 
+    }
+    document.body.style.userSelect = "";
+    persistLeftWidth();
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", endDrag);
+    window.removeEventListener("pointercancel", endDrag);
+    window.removeEventListener("pointerleave", endDrag);
+  };
+
+  gutter.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    dragging = true; 
+    pid = e.pointerId;
+    startX = e.clientX; 
+    startW = leftPane.getBoundingClientRect().width;
+    try { gutter.setPointerCapture(pid); } catch {}
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    window.addEventListener("pointerleave", endDrag);
+  });
+}
+
+function persistLeftWidth(){
+  const cs = getComputedStyle(document.documentElement);
+  const w = cs.getPropertyValue("--leftw").trim();
+  localStorage.setItem("studio.leftw", w);
+}
+
+function restoreLeftWidth(){
+  const w = localStorage.getItem("studio.leftw");
+  if (w) document.documentElement.style.setProperty("--leftw", w);
+}
+
+// Animations CSS
+const style = document.createElement("style");
+style.textContent = `
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes slideOut {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(100%); opacity: 0; }
+}
+`;
+document.head.appendChild(style);
