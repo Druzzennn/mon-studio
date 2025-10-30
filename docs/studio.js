@@ -397,13 +397,16 @@ function injectExternalFiles(html){
   
   // Injecter CSS avant </head>
   if (cssFiles.length && result.includes("</head>")) {
-    const styles = cssFiles.map(f => `<style data-file="${f}">\n${fs[f]}\n</style>`).join("\n");
+    const styles = cssFiles.map(f => `<style data-file="${esc(f)}">\n${fs[f]}\n</style>`).join("\n");
     result = result.replace("</head>", styles + "\n</head>");
   }
   
-  // Injecter JS avant </body>
+  // Injecter JS avant </body> - Échapper </script> pour éviter les cassures
   if (jsFiles.length && result.includes("</body>")) {
-    const scripts = jsFiles.map(f => `<script data-file="${f}">\n${fs[f]}\n</script>`).join("\n");
+    const scripts = jsFiles.map(f => {
+      const jsContent = String(fs[f]).replace(/<\/script>/gi, '<\\/script>');
+      return `<script data-file="${esc(f)}">\n${jsContent}\n</script>`;
+    }).join("\n");
     result = result.replace("</body>", scripts + "\n</body>");
   }
   
