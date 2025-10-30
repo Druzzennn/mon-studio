@@ -17,31 +17,30 @@
     finally{ clearTimeout(to); }
   }
 
-  function normalizeToFiles(res){
-    if(!res) return { files:{} };
-    if(res.files && typeof res.files==="object") return { files:res.files };
-    const html = res.html || res.code || res.markup || res.text;
-    if(typeof html==="string" && html.trim()) return { files:{ "index.html": html } };
-    return { files:{} };
+  function normalize(res){
+    const out = { files:{}, reply:null, meta: res?.meta||null };
+    if (res?.files && typeof res.files==="object") out.files = res.files;
+    const reply = res?.reply ?? res?.message ?? res?.text ?? res?.raw;
+    if (reply) out.reply = String(reply);
+    return out;
   }
 
   async function aiGenerate(prompt){
     const fs = loadFS();
     const res = await aiFetch("/generate", { prompt, files: fs });
     if(res.error){
-      // fallback client si le serveur renvoie une erreur
-      const fallback = { files: { "index.html": "<!doctype html><meta charset='utf-8'><title>Aperçu</title><h1>Prototype (client)</h1><p>"+escape(prompt)+"</p>" } };
+      // fallback minimal + réponse textuelle
+      const reply = `[fallback] ${res.error}`;
+      const fallback = { files: { "index.html": "<!doctype html><meta charset='utf-8'><title>Aperçu</title><h1>Prototype</h1><p>"+escape(prompt)+"</p>" }, reply };
       applyFiles(fallback.files);
-      return { ok:false, error:res.error, ...fallback };
+      return { ok:false, ...fallback };
     }
-    const norm = normalizeToFiles(res);
+    const norm = normalize(res);
     if(Object.keys(norm.files).length) applyFiles(norm.files);
-    return { ok:true, ...norm, meta: res.meta || null };
+    return { ok:true, ...norm };
   }
-
-  async function aiAnalyze(){ const fs=loadFS(); return await aiFetch("/analyze", { files: fs }); }
 
   function escape(s){ return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 
-  window.ai = { generate: aiGenerate, analyze: aiAnalyze, loadFS, applyFiles };
+  window.ai = { generate: aiGenerate, loadFS, applyFiles };
 })();
