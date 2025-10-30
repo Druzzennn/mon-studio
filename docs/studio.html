@@ -9,7 +9,7 @@
   <style>
     :root{
       --bg:#0b0f17; --panel:#0f1522; --line:#1f2937; --text:#e5e7eb; --sub:#9ca3af; --accent:#5b21b6;
-      --leftw:50vw; /* largeur panneau gauche (PC), ajustée par le gutter */
+      --leftw:50vw; /* largeur panneau gauche (PC) */
     }
     *{box-sizing:border-box}
     html,body{height:100%;margin:0}
@@ -21,15 +21,15 @@
     button.primary{background:var(--accent);border-color:var(--accent)}
 
     /* ---- PC: split pane avec gutter ---- */
-    main#split{
+    main#layout{
       flex:1; min-height:0;
       display:grid;
       grid-template-columns: var(--leftw) 6px 1fr;
       grid-template-rows: 1fr;
     }
-    aside#left{min-width:300px;min-height:0;background:#0f1522;border-right:1px solid var(--line);display:flex;flex-direction:column}
+    aside#left{min-width:320px;min-height:0;background:#0f1522;border-right:1px solid var(--line);display:flex;flex-direction:column}
     #gutter{background:#14213d;cursor:col-resize}
-    section.preview{min-width:0;min-height:0;background:#0b1324}
+    section#preview{min-width:0;min-height:0;background:#0b1324}
     #frame{width:100%;height:100%;border:0;background:#0b1324}
 
     /* Tabs gauche (PC) */
@@ -58,56 +58,47 @@
     #chat-input{flex:1;min-height:64px;max-height:180px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#0b1324;color:var(--text);resize:vertical}
     #chat-send{height:auto;padding:8px 14px}
 
-    /* ---- Mobile: une seule vue à la fois ---- */
+    /* ---- Mobile: une seule vue à la fois (Preview/Code/Chat) ---- */
     .m-tabs{display:none}
     @media (max-width:900px){
-      header{gap:6px}
-      main#split{display:block}
-      /* On cache le split PC et on utilise 1 panneau plein écran selon l’onglet mobile */
-      aside#left, #gutter, section.preview{display:none}
+      main#layout{display:none} /* on masque le split PC */
       .m-tabs{display:flex;gap:8px;padding:8px 12px;background:#0f1522;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
       .m-tabs button{flex:1;border:1px solid var(--line);background:#121a2e;color:var(--text);padding:10px;border-radius:8px}
       .m-tabs button.active{background:#18233c}
       .m-view{height:calc(100% - 50px);min-height:0}
       .m-view > *{width:100%;height:100%}
 
-      /* Vues mobiles (exclusives) */
-      body.m-view-preview #m-preview{display:block}
-      body.m-view-preview #m-code, body.m-view-preview #m-chat{display:none}
-
-      body.m-view-code #m-code{display:flex}
-      body.m-view-code #m-preview, body.m-view-code #m-chat{display:none}
-
-      body.m-view-chat #m-chat{display:flex}
-      body.m-view-chat #m-preview, body.m-view-chat #m-code{display:none}
-
-      /* Panneaux mobiles réutilisent les mêmes styles que PC */
-      #m-code, #m-chat{background:#0f1522}
+      /* vues exclusives via classes sur <body> */
+      #m-preview,#m-code,#m-chat{display:none}
+      body.m-preview #m-preview{display:block}
+      body.m-code    #m-code{display:flex}
+      body.m-chat    #m-chat{display:flex}
+      #m-preview iframe{width:100%;height:100%;border:0;background:#0b1324}
+      #m-code{background:#0f1522}
       #m-code #editor{height:100%}
       #m-code #code{height:100%}
-      #m-preview{background:#0b1324}
-      #m-preview iframe{width:100%;height:100%;border:0;background:#0b1324}
+      #m-chat{background:#0f1522;flex-direction:column}
+      #m-chat #chat-log{flex:1}
     }
   </style>
 </head>
-<body class="m-view-preview">
+<body class="m-preview">
   <header>
     <b>Studio</b>
     <span style="flex:1"></span>
     <button id="save">Enregistrer</button>
-    <button id="preview" class="primary">Aperçu</button>
+    <button id="preview-btn" class="primary">Aperçu</button>
   </header>
 
-  <!-- Onglets mobiles (un seul affiché à la fois) -->
+  <!-- Mobile tabs -->
   <div class="m-tabs">
     <button id="m-tab-preview" class="active">Aperçu</button>
     <button id="m-tab-code">Code</button>
     <button id="m-tab-chat">Chat IA</button>
   </div>
 
-  <!-- PC: split pane / Mobile: vues exclusives -->
-  <main id="split">
-    <!-- Gauche (PC): Chat/Code -->
+  <!-- PC layout -->
+  <main id="layout">
     <aside id="left">
       <div class="side-tabs">
         <button id="tab-chat" class="active">Chat IA</button>
@@ -130,16 +121,15 @@
 
     <div id="gutter" aria-label="Redimensionner"></div>
 
-    <!-- Droite (PC): Aperçu -->
-    <section class="preview"><iframe id="frame" sandbox="allow-scripts"></iframe></section>
+    <section id="preview"><iframe id="frame" sandbox="allow-scripts"></iframe></section>
   </main>
 
-  <!-- Mobile views (réutilisent le même DOM/IDs pour logique commune) -->
-  <div id="m-preview" class="m-view" style="display:none"><iframe sandbox="allow-scripts"></iframe></div>
-  <div id="m-code" class="m-view" style="display:none">
+  <!-- Mobile views (UN SEUL DOM, pas de doublons d'IDs) -->
+  <div id="m-preview" class="m-view"><iframe sandbox="allow-scripts"></iframe></div>
+  <div id="m-code" class="m-view">
     <div id="editor"><textarea id="code"></textarea></div>
   </div>
-  <div id="m-chat" class="m-view" style="display:none">
+  <div id="m-chat" class="m-view">
     <div id="chat-panel" style="display:flex;flex-direction:column;width:100%;height:100%">
       <div id="chat-log"></div>
       <div id="chat-input-row">
