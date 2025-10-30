@@ -1,6 +1,7 @@
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Studio</title><style>html,body{height:100%;margin:0;font-family:system-ui,Arial}header{padding:8px 12px;border-bottom:1px solid #ddd;display:flex;gap:8px;align-items:center}main{height:calc(100% - 49px);display:grid;grid-template-columns:1fr 1fr}textarea{width:100%;height:100%;border:0;outline:0;padding:12px;resize:none;border-right:1px solid #eee;font-family:ui-monospace,Consolas,monospace;font-size:14px}iframe{width:100%;height:100%;border:0}</style></head><body>
 <header>
   <button id="run">Aperçu</button>
+  <button id="save">Enregistrer</button>
   <button id="reset">Réinitialiser</button>
 </header>
 <main>
@@ -19,12 +20,23 @@
   <iframe id="preview" sandbox="allow-scripts allow-same-origin"></iframe>
 </main>
 <script>
-const code = document.getElementById('code');
-const frame = document.getElementById('preview');
-document.getElementById('run').onclick = () => {
-  const blob = new Blob([code.value], {type:'text/html'});
-  frame.src = URL.createObjectURL(blob);
-};
-document.getElementById('reset').onclick = () => location.reload();
+const KEY="studio.code.v1";
+const code=document.getElementById('code');
+const frame=document.getElementById('preview');
+function preview(){
+  const blob=new Blob([code.value],{type:'text/html'});
+  frame.src=URL.createObjectURL(blob);
+}
+function save(){
+  localStorage.setItem(KEY,code.value);
+}
+function load(){
+  const v=localStorage.getItem(KEY);
+  if(v) code.value=v;
+}
+document.getElementById('run').onclick=preview;
+document.getElementById('save').onclick=()=>{save();preview();};
+document.getElementById('reset').onclick=()=>{localStorage.removeItem(KEY);location.reload();};
+load();preview();
 </script>
 </body></html>
