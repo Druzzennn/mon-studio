@@ -8,19 +8,19 @@
   <link rel="manifest" href="manifest.webmanifest">
   <style>
     :root{
-      --bg:#0b0f17; --panel:#0f1522; --line:#1f2937; --text:#e5e7eb; --sub:#9ca3af; --accent:#5b21b6;
-      --leftw:50vw; /* largeur initiale du panneau gauche (PC), persistance via JS */
+      --bg:#0b0f17; --panel:#0f1522; --line:#1f2937; --text:#e5e7eb; --accent:#5b21b6;
+      --leftw:50vw;
     }
     *{box-sizing:border-box}
     html,body{height:100%;margin:0}
     body{display:flex;flex-direction:column;background:var(--bg);color:var(--text);font:14px/1.6 system-ui,Roboto,Arial;overflow:hidden}
 
-    header{display:flex;gap:8px;align-items:center;padding:10px 12px;background:#0f1522;border-bottom:1px solid var(--line)}
+    header{position:relative;z-index:5;display:flex;gap:8px;align-items:center;padding:10px 12px;background:#0f1522;border-bottom:1px solid var(--line)}
     header b{font-weight:600}
-    button{border:1px solid var(--line);border-radius:8px;padding:0 12px;height:34px;background:#141c2e;color:var(--text);cursor:pointer;white-space:nowrap}
+    button{border:1px solid var(--line);border-radius:8px;padding:0 12px;height:34px;background:#141c2e;color:var(--text);cursor:pointer}
     button.primary{background:var(--accent);border-color:var(--accent)}
 
-    /* ---- PC: split pane + gutter ---- */
+    /* PC layout */
     main#layout{
       flex:1; min-height:0;
       display:grid;
@@ -32,14 +32,14 @@
     section#preview{min-width:0;min-height:0;background:#0b1324}
     #frame{width:100%;height:100%;border:0;background:#0b1324}
 
-    /* Tabs gauche (PC) */
-    .side-tabs{display:flex;gap:8px;padding:8px;border-bottom:1px solid var(--line);background:#0f1522;position:sticky;top:0;z-index:1}
+    /* onglets PC gauche */
+    .side-tabs{display:flex;gap:8px;padding:8px;border-bottom:1px solid var(--line);background:#0f1522;position:sticky;top:0;z-index:2}
     .side-tabs button{flex:1;border:1px solid var(--line);background:#121a2e;color:var(--text);padding:8px;border-radius:8px}
     .side-tabs button.active{background:#18233c}
     .panel{flex:1;min-height:0;display:none}
     .panel.active{display:flex}
 
-    /* Code panel */
+    /* code */
     #code-panel{flex-direction:column}
     #files{border-bottom:1px solid var(--line);min-height:120px;max-height:40%;overflow:auto;background:#0c1323}
     #files ul{list-style:none;margin:0;padding:8px}
@@ -48,7 +48,7 @@
     #editor{flex:1;display:flex;min-height:0}
     #code{flex:1;min-height:0;width:100%;height:100%;border:0;outline:0;padding:14px 16px;background:#0b1324;color:#e5e7eb;font-family:ui-monospace,Consolas,Menlo,monospace;white-space:pre;overflow:auto}
 
-    /* Chat panel */
+    /* chat */
     #chat-panel{flex-direction:column}
     #chat-log{flex:1;min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px;background:#0b1324}
     .msg{max-width:90%;padding:10px 12px;border-radius:12px;white-space:pre-wrap}
@@ -58,21 +58,18 @@
     #chat-input{flex:1;min-height:64px;max-height:180px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#0b1324;color:var(--text);resize:vertical}
     #chat-send{height:auto;padding:8px 14px}
 
-    /* ---- Mobile: UNE vue à la fois (Preview/Code/Chat) sans dupliquer le DOM ---- */
-    .m-tabs{display:none}
-    @media (max-width:900px){
-      .m-tabs{display:flex;gap:8px;padding:8px 12px;background:#0f1522;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
-      .m-tabs button{flex:1;border:1px solid var(--line);background:#121a2e;color:var(--text);padding:10px;border-radius:8px}
-      .m-tabs button.active{background:#18233c}
+    /* Mobile mode (activé par classe .is-mobile posée par JS) */
+    body.is-mobile #gutter{display:none}
+    body.is-mobile main#layout{grid-template-columns:1fr}
+    body.is-mobile aside#left, body.is-mobile section#preview{display:none}
+    body.is-mobile.v-preview section#preview{display:block}
+    body.is-mobile.v-code    aside#left{display:flex}
+    body.is-mobile.v-chat    aside#left{display:flex}
 
-      /* on réutilise #left et #preview, on n'affiche qu'UNE vue */
-      #gutter{display:none}
-      main#layout{grid-template-columns:1fr}
-      aside#left, section#preview{display:none}
-      body.v-preview section#preview{display:block}
-      body.v-code    aside#left{display:flex}
-      body.v-chat    aside#left{display:flex}
-    }
+    .m-tabs{display:none}
+    body.is-mobile .m-tabs{position:sticky;top:0;z-index:4;display:flex;gap:8px;padding:8px 12px;background:#0f1522;border-bottom:1px solid var(--line)}
+    body.is-mobile .m-tabs button{flex:1;border:1px solid var(--line);background:#121a2e;color:var(--text);padding:10px;border-radius:8px}
+    body.is-mobile .m-tabs button.active{background:#18233c}
   </style>
 </head>
 <body class="v-preview">
@@ -83,14 +80,13 @@
     <button id="preview-btn" class="primary">Aperçu</button>
   </header>
 
-  <!-- Mobile tabs -->
+  <!-- Onglets Mobile (affichés seulement en .is-mobile) -->
   <div class="m-tabs">
     <button id="m-tab-preview" class="active">Aperçu</button>
     <button id="m-tab-code">Code</button>
     <button id="m-tab-chat">Chat IA</button>
   </div>
 
-  <!-- Layout unique (PC et Mobile) -->
   <main id="layout">
     <aside id="left">
       <div class="side-tabs">
@@ -117,8 +113,8 @@
     <section id="preview"><iframe id="frame" sandbox="allow-scripts"></iframe></section>
   </main>
 
-  <!-- IMPORTANT: ai.js en script normal (garantit window.ai) puis studio.js en module -->
-  <script src="ai.js?v=5"></script>
-  <script type="module" src="studio.js?v=5"></script>
+  <!-- Charger l'API IA AVANT le studio -->
+  <script src="ai.js?v=7"></script>
+  <script type="module" src="studio.js?v=7"></script>
 </body>
 </html>
