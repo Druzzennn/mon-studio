@@ -1,4 +1,4 @@
-(() => {
+(function(){
   const API = "https://studio-ai.lucrincdu54.workers.dev";
   const KEY = "studio.fs.v1";
 
@@ -9,11 +9,11 @@
   async function aiFetch(path, payload){
     const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(), 25000);
     try{
-      const r = await fetch(API+path, { method:"POST", headers:{ "Content-Type":"application/json", "Accept":"application/json" }, body:JSON.stringify(payload), signal:ctrl.signal });
+      const r = await fetch(API+path, { method:"POST", headers:{ "Content-Type":"application/json","Accept":"application/json" }, body:JSON.stringify(payload), signal:ctrl.signal });
       const text = await r.text(); let json; try{ json=JSON.parse(text); }catch{ json={ raw:text }; }
       if(!r.ok) return { error:`http_${r.status}`, ...json };
       return json;
-    }catch(e){ return { error: e.name==="AbortError" ? "timeout" : "network_error", detail:String(e) }; }
+    }catch(e){ return { error: (e && e.name)==="AbortError" ? "timeout" : "network_error", detail:String(e) }; }
     finally{ clearTimeout(to); }
   }
 
@@ -29,18 +29,15 @@
     const fs = loadFS();
     const res = await aiFetch("/generate", { prompt, files: fs });
     if(res.error){
-      // fallback minimal + réponse textuelle
+      // fallback : répond quand même quelque chose d'utile
       const reply = `[fallback] ${res.error}`;
-      const fallback = { files: { "index.html": "<!doctype html><meta charset='utf-8'><title>Aperçu</title><h1>Prototype</h1><p>"+escape(prompt)+"</p>" }, reply };
-      applyFiles(fallback.files);
+      const fallback = { files:{}, reply };
       return { ok:false, ...fallback };
     }
     const norm = normalize(res);
     if(Object.keys(norm.files).length) applyFiles(norm.files);
     return { ok:true, ...norm };
   }
-
-  function escape(s){ return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 
   window.ai = { generate: aiGenerate, loadFS, applyFiles };
 })();
