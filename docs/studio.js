@@ -1,4 +1,3 @@
-// Clé alignée avec ai.js
 const KEY = "studio.fs.v1";
 
 const list = document.getElementById("list");
@@ -7,7 +6,7 @@ const frame = document.getElementById("frame");
 const promptInput = document.getElementById("prompt");
 const tabsBar = document.querySelector(".tabs");
 
-let fs = window.ai?.loadFS ? window.ai.loadFS() : loadFSFallback();
+let fs = window.ai?.loadFS ? window.ai.loadFS() : {};
 let current = null;
 let typingTimer = null;
 
@@ -15,15 +14,13 @@ boot();
 
 function boot(){
   applyMobile();
-  sanitizeFS();
+  ensureDefault();
   renderList();
-  const first = Object.keys(fs)[0] || "index.html";
-  if(!fs[first]) fs[first] = "<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>";
-  openFile(first);
+  openFile(Object.keys(fs)[0]);
 
-  document.getElementById("save").onclick = ()=>{ commit(); flash("Enregistré"); };
-  document.getElementById("preview").onclick = ()=> preview(fs[current]||"");
-  document.getElementById("ai-propose").onclick = generateAI;
+  qs("#save").onclick = ()=>{ commit(); flash("Enregistré"); };
+  qs("#preview").onclick = ()=> preview(fs[current]||"");
+  qs("#ai-propose").onclick = onGenerate;
 
   code.addEventListener("input", ()=>{
     clearTimeout(typingTimer);
@@ -31,22 +28,20 @@ function boot(){
   });
 }
 
-function loadFSFallback(){
-  try{ const raw = localStorage.getItem(KEY); return raw?JSON.parse(raw):{}; }
-  catch{ return {}; }
+function qs(sel){ return document.querySelector(sel); }
+function ensureDefault(){
+  if (!Object.keys(fs).length) fs["index.html"] = "<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>";
+  saveFS(fs);
 }
-function saveFS(obj){
-  localStorage.setItem(KEY, JSON.stringify(obj));
-}
+function saveFS(obj){ localStorage.setItem(KEY, JSON.stringify(obj)); }
 
 function renderList(){
   list.innerHTML = "";
   Object.keys(fs).sort().forEach(name=>{
-    const li = document.createElement("li");
-    li.dataset.name = name;
+    const li=document.createElement("li");
+    li.dataset.name=name;
     li.className = name===current ? "active":"";
-    const span = document.createElement("span"); span.textContent = name;
-    li.append(span);
+    li.textContent = name;
     li.onclick = ()=> openFile(name);
     list.appendChild(li);
   });
@@ -64,8 +59,7 @@ function openFile(name){
 function commit(){
   if(!current) return;
   fs[current] = code.value;
-  if(window.ai?.applyFiles) window.ai.applyFiles({[current]: code.value});
-  else saveFS(fs);
+  window.ai?.applyFiles ? window.ai.applyFiles({[current]: code.value}) : saveFS(fs);
 }
 
 function preview(html){
@@ -78,37 +72,21 @@ function preview(html){
   if(document.body.classList.contains("mobile")) setView("preview");
 }
 
-async function generateAI(){
+async function onGenerate(){
   const q = promptInput.value.trim();
   if(!q){ flash("Décris d'abord"); return; }
-  flash("Génération…");
-  try{
-    const res = await window.ai.generate(q);
-    if(res && res.files){
-      for(const [p,c] of Object.entries(res.files)) fs[p]=c;
-      if(window.ai?.applyFiles) window.ai.applyFiles(res.files); else saveFS(fs);
-      renderList();
-      const htmlTarget = Object.keys(res.files).find(n=>/\.html?$/i.test(n)) || Object.keys(res.files)[0];
-      if(htmlTarget) openFile(htmlTarget);
-      flash("OK");
-    }else{
-      flash("Aucune sortie");
-    }
-  }catch(e){ console.error(e); flash("Erreur IA"); }
-}
-
-function sanitizeFS(){
-  // Corrige un index.html pollué par du code app affiché en texte
-  const suspect = ["document.getElementById(\"ai-propose\")","const KEY =","openFile(name)"];
-  for(const [name,content] of Object.entries(fs)){
-    if(!/\.html?$/i.test(name)) continue;
-    const txt = String(content||"");
-    const hasScript = /<script[\s>]/i.test(txt);
-    if(suspect.some(s=>txt.includes(s)) && !hasScript){
-      fs[name] = "<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>";
-    }
-  }
-  if(window.ai?.applyFiles) window.ai.applyFiles(fs); else saveFS(fs);
+  flash("IA…");
+  const res = await window.ai.generate(q);
+  if (res?.error) { flash(`Erreur IA: ${res.error}`); return; }
+  const files = res?.files || {};
+  const keys = Object.keys(files);
+  if (!keys.length) { flash("Aucune sortie IA"); return; }
+  // merge déjà fait côté ai.js, on met à jour vue et ouvre le 1er HTML
+  fs = window.ai.loadFS();
+  renderList();
+  const target = keys.find(n=>/\.html?$/i.test(n)) || keys[0];
+  if (target) openFile(target);
+  flash("OK");
 }
 
 function escapeHTML(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
