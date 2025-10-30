@@ -9,13 +9,13 @@
   <style>
     :root{
       --bg:#0b0f17; --panel:#0f1522; --line:#1f2937; --text:#e5e7eb; --sub:#9ca3af; --accent:#5b21b6;
-      --leftw:50vw; /* largeur initiale panneau gauche (PC) */
+      --leftw:50vw; /* largeur initiale du panneau gauche (PC), persistance via JS */
     }
     *{box-sizing:border-box}
     html,body{height:100%;margin:0}
     body{display:flex;flex-direction:column;background:var(--bg);color:var(--text);font:14px/1.6 system-ui,Roboto,Arial;overflow:hidden}
 
-    header{display:flex;gap:8px;align-items:center;padding:10px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+    header{display:flex;gap:8px;align-items:center;padding:10px 12px;background:#0f1522;border-bottom:1px solid var(--line)}
     header b{font-weight:600}
     button{border:1px solid var(--line);border-radius:8px;padding:0 12px;height:34px;background:#141c2e;color:var(--text);cursor:pointer;white-space:nowrap}
     button.primary{background:var(--accent);border-color:var(--accent)}
@@ -24,10 +24,10 @@
     main#layout{
       flex:1; min-height:0;
       display:grid;
-      grid-template-columns: var(--leftw) 6px 1fr;
+      grid-template-columns: var(--leftw) 8px 1fr;
       grid-template-rows: 1fr;
     }
-    aside#left{min-width:300px;min-height:0;background:#0f1522;border-right:1px solid var(--line);display:flex;flex-direction:column}
+    aside#left{min-width:320px;min-height:0;background:#0f1522;border-right:1px solid var(--line);display:flex;flex-direction:column}
     #gutter{background:#14213d;cursor:col-resize}
     section#preview{min-width:0;min-height:0;background:#0b1324}
     #frame{width:100%;height:100%;border:0;background:#0b1324}
@@ -58,23 +58,24 @@
     #chat-input{flex:1;min-height:64px;max-height:180px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#0b1324;color:var(--text);resize:vertical}
     #chat-send{height:auto;padding:8px 14px}
 
-    /* ---- Mobile: UNE vue à la fois (Preview/Code/Chat) ---- */
+    /* ---- Mobile: UNE vue à la fois (Preview/Code/Chat) sans dupliquer le DOM ---- */
     .m-tabs{display:none}
     @media (max-width:900px){
       .m-tabs{display:flex;gap:8px;padding:8px 12px;background:#0f1522;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
       .m-tabs button{flex:1;border:1px solid var(--line);background:#121a2e;color:var(--text);padding:10px;border-radius:8px}
       .m-tabs button.active{background:#18233c}
-      /* cache par défaut */
-      aside#left, #gutter, section#preview{display:none}
-      /* montre UNIQUEMENT la vue demandée via classe sur <body> */
-      body.m-preview section#preview{display:block}
-      body.m-code    aside#left{display:flex}
-      body.m-chat    aside#left{display:flex}
-      /* quand m-code → onglet Code actif ; m-chat → onglet Chat actif (géré par JS) */
+
+      /* on réutilise #left et #preview, on n'affiche qu'UNE vue */
+      #gutter{display:none}
+      main#layout{grid-template-columns:1fr}
+      aside#left, section#preview{display:none}
+      body.v-preview section#preview{display:block}
+      body.v-code    aside#left{display:flex}
+      body.v-chat    aside#left{display:flex}
     }
   </style>
 </head>
-<body class="m-preview">
+<body class="v-preview">
   <header>
     <b>Studio</b>
     <span style="flex:1"></span>
@@ -89,7 +90,7 @@
     <button id="m-tab-chat">Chat IA</button>
   </div>
 
-  <!-- PC layout -->
+  <!-- Layout unique (PC et Mobile) -->
   <main id="layout">
     <aside id="left">
       <div class="side-tabs">
@@ -116,8 +117,8 @@
     <section id="preview"><iframe id="frame" sandbox="allow-scripts"></iframe></section>
   </main>
 
-  <!-- cache-busting -->
-  <script type="module" src="ai.js?v=3"></script>
-  <script type="module" src="studio.js?v=3"></script>
+  <!-- IMPORTANT: ai.js en script normal (garantit window.ai) puis studio.js en module -->
+  <script src="ai.js?v=5"></script>
+  <script type="module" src="studio.js?v=5"></script>
 </body>
 </html>
