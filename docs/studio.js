@@ -29,7 +29,7 @@ const mTabChat    = document.getElementById("m-tab-chat");
 let fs   = window.ai?.loadFS ? window.ai.loadFS() : {};
 let chat = loadChat();
 let current = null;
-let previewTarget = null; // fichier HTML à prévisualiser
+let previewTarget = null; // fichier HTML rendu
 let typingTimer = null;
 
 /* ===== Init ===== */
@@ -46,7 +46,7 @@ function init(){
   tabChat.addEventListener("click", ()=>selectLeft("chat"));
   tabCode.addEventListener("click", ()=>selectLeft("code"));
 
-  // Onglets Mobile
+  // Onglets Mobile (vues exclusives)
   mTabPreview.addEventListener("click", ()=>selectMobile("preview"));
   mTabCode.addEventListener("click", ()=>{ selectLeft("code"); selectMobile("code"); });
   mTabChat.addEventListener("click", ()=>{ selectLeft("chat"); selectMobile("chat"); });
@@ -62,7 +62,7 @@ function init(){
   // Code editing
   codeEl.addEventListener("input", ()=>{
     clearTimeout(typingTimer);
-    typingTimer = setTimeout(()=>{ commit(); refreshPreview(); }, 150);
+    typingTimer = setTimeout(()=>{ commit(); refreshPreview(); }, 120);
   });
 
   // Save/Preview
@@ -73,8 +73,8 @@ function init(){
   setupGutter();
 
   // États init
-  selectLeft("chat");
-  selectMobile("preview");
+  selectLeft("chat");       // PC par défaut
+  selectMobile("preview");  // Mobile par défaut
 }
 
 /* ===== FS / Files ===== */
@@ -159,8 +159,8 @@ function buildPromptFromChat(){
   const names = Object.keys(fs).join(", ");
   let convo =
 `Contexte projet. Fichiers existants: ${names}.
-Réponds en JSON strict {"files":{"path":"content"}, "reply":"texte concis expliquant ce que tu as fait et pourquoi"} quand tu modifies/ajoutes des fichiers.
-Fragments HTML acceptés pour le contenu. Pas de cadres \`\`\`, pas de prose hors JSON.
+Réponds en JSON strict {"files":{"path":"content"}, "reply":"bref résumé de ce que tu as fait et pourquoi"} quand tu modifies/ajoutes des fichiers.
+Fragments HTML acceptés. Pas de \`\`\`, pas de texte hors JSON.
 
 Conversation:
 `;
@@ -180,9 +180,7 @@ async function sendChat(){
     const prompt = buildPromptFromChat();
     const res = await window.ai.generate(prompt);
 
-    // afficher une vraie réponse si dispo
     const reply = res?.reply ? String(res.reply) : null;
-
     const files = res?.files || {};
     const keys = Object.keys(files);
 
@@ -194,13 +192,12 @@ async function sendChat(){
     } else {
       refreshPreview();
     }
-
     addMsg("assistant", reply ?? (keys.length ? `OK • ${keys.length} fichier(s) mis à jour` : `Aucune modification`));
     renderChat();
-  } catch(e){
+  }catch(e){
     addMsg("assistant", "Erreur: " + String(e));
     renderChat();
-  } finally {
+  }finally{
     lockChat(false);
   }
 }
@@ -222,22 +219,22 @@ function selectLeft(which){
   codePanel.classList.toggle("active", !isChat);
 }
 function selectMobile(which){
-  document.body.classList.remove("m-preview","m-code","m-chat");
+  document.body.classList.remove("v-preview","v-code","v-chat");
   if (which==="preview"){
-    document.body.classList.add("m-preview");
+    document.body.classList.add("v-preview");
     mTabPreview.classList.add("active"); mTabCode.classList.remove("active"); mTabChat.classList.remove("active");
   } else if (which==="code"){
-    document.body.classList.add("m-code");
+    document.body.classList.add("v-code");
     mTabCode.classList.add("active"); mTabPreview.classList.remove("active"); mTabChat.classList.remove("active");
     selectLeft("code");
   } else {
-    document.body.classList.add("m-chat");
+    document.body.classList.add("v-chat");
     mTabChat.classList.add("active"); mTabPreview.classList.remove("active"); mTabCode.classList.remove("active");
     selectLeft("chat");
   }
 }
 
-/* ===== Gutter (drag robuste, 240px–(viewport-360px), arrêt net) ===== */
+/* ===== Gutter (drag robuste, bornes, arrêt net) ===== */
 function setupGutter(){
   let dragging=false, pid=null, startX=0, startW=0;
 
@@ -246,8 +243,8 @@ function setupGutter(){
     const clientX = e.clientX ?? (e.touches && e.touches[0]?.clientX);
     if (clientX==null) return;
     const dx = clientX - startX;
-    const minPx = 240;                         // min fixe
-    const maxPx = Math.max(360, window.innerWidth - 360); // laisse place à l'aperçu
+    const minPx = 240;
+    const maxPx = Math.max(360, window.innerWidth - 360);
     const newW = Math.min(maxPx, Math.max(minPx, startW + dx));
     document.documentElement.style.setProperty("--leftw", newW+"px");
   };
