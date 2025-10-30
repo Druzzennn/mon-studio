@@ -116,9 +116,6 @@
     <b>Studio</b>
     <label style="margin-left:12px">Aperçu:</label>
     <select id="preview-select" title="Fichier à prévisualiser"></select>
-    <span style="flex:1"></span>
-    <button id="save" title="Sauvegarder (Ctrl+S)">💾 Sauvegarder</button>
-    <button id="preview-btn" class="primary" title="Rafraîchir l'aperçu">🔄 Aperçu</button>
   </header>
 
   <!-- Tabs Mobile (une seule vue à la fois) -->
@@ -165,12 +162,12 @@
     <div id="gutter" aria-label="Redimensionner"></div>
 
     <section id="preview">
-      <iframe id="frame" sandbox="allow-scripts allow-same-origin"></iframe>
+      <iframe id="frame" sandbox="allow-scripts"></iframe>
       <div id="console"></div>
     </section>
   </main>
 
-  <script src="ai.js?v=9"></script>
-  <script type="module" src="studio.js?v=9"></script>
+  <script src="ai.js?v=10"></script>
+  <script type="module" src="studio.js?v=10"></script>
 </body>
 </html>
