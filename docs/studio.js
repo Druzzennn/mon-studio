@@ -1,7 +1,7 @@
 const FS_KEY   = "studio.fs.v1";
 const CHAT_KEY = "studio.chat.v1";
 
-/* ---- Refs PC ---- */
+/* ===== Refs PC ===== */
 const framePC     = document.getElementById("frame");
 const leftPane    = document.getElementById("left");
 const gutter      = document.getElementById("gutter");
@@ -15,16 +15,13 @@ const chatLog     = document.getElementById("chat-log");
 const chatInput   = document.getElementById("chat-input");
 const chatSend    = document.getElementById("chat-send");
 const saveBtn     = document.getElementById("save");
-const previewBtn  = document.getElementById("preview");
+const previewBtn  = document.getElementById("preview-btn");
 
-/* ---- Refs Mobile ---- */
+/* ===== Refs Mobile ===== */
 const mTabPreview = document.getElementById("m-tab-preview");
 const mTabCode    = document.getElementById("m-tab-code");
 const mTabChat    = document.getElementById("m-tab-chat");
-const mPreview    = document.getElementById("m-preview");
-const mPreviewIF  = mPreview?.querySelector("iframe");
-const mCode       = document.getElementById("m-code");
-const mChat       = document.getElementById("m-chat");
+const mPreviewIF  = document.querySelector("#m-preview iframe");
 
 let fs   = window.ai?.loadFS ? window.ai.loadFS() : {};
 let chat = loadChat();
@@ -36,43 +33,44 @@ init();
 /* ================= INIT ================= */
 function init(){
   ensureDefaultFS();
+  restoreLeftWidth();
   renderFiles();
   openFirst();
   renderChat();
 
-  /* Tabs PC */
-  tabChat.onclick = ()=>selectLeft("chat");
-  tabCode.onclick = ()=>selectLeft("code");
+  /* Onglets PC (Chat/Code) */
+  tabChat.addEventListener("click", ()=>selectLeft("chat"));
+  tabCode.addEventListener("click", ()=>selectLeft("code"));
 
-  /* Tabs Mobile */
-  mTabPreview.onclick = ()=>selectMobile("preview");
-  mTabCode.onclick    = ()=>selectMobile("code");
-  mTabChat.onclick    = ()=>selectMobile("chat");
+  /* Onglets Mobile (Preview/Code/Chat) */
+  mTabPreview.addEventListener("click", ()=>selectMobile("preview"));
+  mTabCode.addEventListener("click", ()=>selectMobile("code"));
+  mTabChat.addEventListener("click", ()=>selectMobile("chat"));
 
   /* Chat */
-  chatSend.onclick = sendChat;
+  chatSend.addEventListener("click", sendChat);
   chatInput.addEventListener("keydown", e=>{
     if (e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendChat(); }
   });
   chatInput.addEventListener("input", autoGrowChat);
   autoGrowChat();
 
-  /* Code editing */
+  /* Éditeur de code */
   codeEl.addEventListener("input", ()=>{
     clearTimeout(typingTimer);
-    typingTimer = setTimeout(()=>{ commit(); refreshPreview(); }, 180);
+    typingTimer = setTimeout(()=>{ commit(); refreshPreview(); }, 150);
   });
 
-  /* Save/Preview */
-  saveBtn.onclick    = ()=> commit();
-  previewBtn.onclick = ()=> refreshPreview();
+  /* Sauvegarde / Aperçu */
+  saveBtn.addEventListener("click", ()=> commit());
+  previewBtn.addEventListener("click", ()=> refreshPreview());
 
-  /* Gutter drag (PC) */
+  /* Gutter (drag) */
   setupGutter();
 
-  /* Départ: PC => left=chat ; Mobile => vue=preview */
-  selectLeft("chat");
-  if (isMobile()) selectMobile("preview");
+  /* États init */
+  selectLeft("chat");         // PC: onglet Chat par défaut
+  selectMobile("preview");    // Mobile: aperçu par défaut
 }
 
 /* ================= FS / FILES ================= */
@@ -90,7 +88,7 @@ function renderFiles(){
     li.dataset.name=name;
     li.className = name===current ? "active":"";
     li.textContent = name;
-    li.onclick = ()=> openFile(name);
+    li.addEventListener("click", ()=> openFile(name));
     listEl.appendChild(li);
   });
 }
@@ -176,7 +174,6 @@ async function sendChat(){
     if (keys.length){
       fs = window.ai.loadFS();
       renderFiles();
-      // ouvre le premier HTML ou le 1er fichier
       const target = keys.find(n=>/\.html?$/i.test(n)) || keys[0];
       if (target) openFile(target);
       addMsg("assistant", `OK • ${keys.length} fichier(s) mis à jour`);
@@ -212,37 +209,51 @@ function selectLeft(which){
   }
 }
 function selectMobile(which){
-  document.body.classList.remove("m-view-preview","m-view-code","m-view-chat");
-  if (which==="preview"){
-    document.body.classList.add("m-view-preview");
-    mTabPreview.classList.add("active"); mTabCode.classList.remove("active"); mTabChat.classList.remove("active");
-  } else if (which==="code"){
-    document.body.classList.add("m-view-code");
-    mTabCode.classList.add("active"); mTabPreview.classList.remove("active"); mTabChat.classList.remove("active");
-  } else {
-    document.body.classList.add("m-view-chat");
-    mTabChat.classList.add("active"); mTabPreview.classList.remove("active"); mTabCode.classList.remove("active");
-  }
+  document.body.classList.remove("m-preview","m-code","m-chat");
+  if (which==="preview"){ document.body.classList.add("m-preview"); 
+    mTabPreview.classList.add("active"); mTabCode.classList.remove("active"); mTabChat.classList.remove("active"); }
+  else if (which==="code"){ document.body.classList.add("m-code"); 
+    mTabCode.classList.add("active"); mTabPreview.classList.remove("active"); mTabChat.classList.remove("active"); }
+  else { document.body.classList.add("m-chat"); 
+    mTabChat.classList.add("active"); mTabPreview.classList.remove("active"); mTabCode.classList.remove("active"); }
 }
 
-/* ================= GUTTER (drag) ================= */
+/* ================= GUTTER (drag résilient) ================= */
 function setupGutter(){
   let dragging=false, startX=0, startW=0;
-  gutter.addEventListener("mousedown", e=>{
+
+  gutter.addEventListener("pointerdown", (e)=>{
     dragging=true; startX=e.clientX; startW=leftPane.getBoundingClientRect().width;
+    gutter.setPointerCapture(e.pointerId);
     document.body.style.userSelect="none";
   });
-  window.addEventListener("mousemove", e=>{
+
+  gutter.addEventListener("pointermove", (e)=>{
     if(!dragging) return;
     const dx = e.clientX - startX;
-    const newW = Math.max(window.innerWidth*0.2, Math.min(window.innerWidth*0.8, startW + dx));
+    const min = Math.max(320, window.innerWidth * 0.20);
+    const max = Math.max(320, window.innerWidth * 0.80);
+    const newW = Math.min(max, Math.max(min, startW + dx));
     document.documentElement.style.setProperty("--leftw", newW+"px");
   });
-  window.addEventListener("mouseup", ()=>{
+
+  gutter.addEventListener("pointerup", (e)=>{
     if(!dragging) return;
-    dragging=false; document.body.style.userSelect="";
+    dragging=false;
+    document.body.style.userSelect="";
+    persistLeftWidth();
+    gutter.releasePointerCapture(e.pointerId);
   });
 }
+function persistLeftWidth(){
+  const cs = getComputedStyle(document.documentElement);
+  const w = cs.getPropertyValue("--leftw").trim();
+  localStorage.setItem("studio.leftw", w);
+}
+function restoreLeftWidth(){
+  const w = localStorage.getItem("studio.leftw");
+  if (w) document.documentElement.style.setProperty("--leftw", w);
+}
 
-/* ================= HELPERS ================= */
+/* ================= Helpers ================= */
 function isMobile(){ return matchMedia("(max-width:900px)").matches; }
