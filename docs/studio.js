@@ -1,40 +1,156 @@
-// Reset dur d'état et assainissement automatique
-const KEY = "studio.fs.v4";
-const list = document.getElementById("list");
-const code = document.getElementById("code");
-const frame = document.getElementById("frame");
-const promptInput = document.getElementById("prompt");
-const tabsBar = document.querySelector(".tabs");
+// Anti-double init et mode purge via ?nocache=1
+if (window.__studioBooted) { /* évite doublons SW/HTML */ throw new Error("booted"); }
+window.__studioBooted = true;
 
-let fs = loadFS();
-let current = null;
-let typingTimer = null;
+(async ()=>{ 
+  if (new URLSearchParams(location.search).has("nocache")) {
+    try {
+      if ("caches" in self) { for (const k of await caches.keys()) await caches.delete(k); }
+      if (navigator.serviceWorker) { const regs = await navigator.serviceWorker.getRegistrations(); for (const r of regs) await r.unregister(); }
+      localStorage.clear();
+    } finally { location.replace(location.pathname); }
+    return;
+  }
 
-init();
+  const KEY = "studio.fs.v7"; // nouvelle clé = état propre
+  const list = document.getElementById("list");
+  const code = document.getElementById("code");
+  const frame = document.getElementById("frame");
+  const promptInput = document.getElementById("prompt");
+  const tabsBar = document.querySelector(".tabs");
 
-function init(){
+  let fs = loadFS();
+  let current = null;
+  let typingTimer = null;
+
   applyMobile();
-  sanitizeFS();               // <- supprime le "JS imprimé en texte"
+  sanitizeFS();            // nettoie un index.html “dumpé”
   renderList();
+
   const first = Object.keys(fs)[0];
-  if(first) openFile(first); else preview("");
+  if (first) openFile(first); else preview("");
 
   document.getElementById("save").onclick = ()=>{ commit(); flash("Enregistré"); };
   document.getElementById("preview").onclick = ()=> preview(fs[current]||"");
   document.getElementById("ai-propose").onclick = generateAI;
+
   code.addEventListener("input", ()=>{
     clearTimeout(typingTimer);
     typingTimer = setTimeout(()=>{ commit(); preview(fs[current]||""); }, 250);
   });
 
-  if ("serviceWorker" in navigator){
-    addEventListener("load", ()=>navigator.serviceWorker.register("sw.js"));
+  if ("serviceWorker" in navigator) {
+    addEventListener("load", ()=>navigator.serviceWorker.register("sw.js?v=7"));
   }
-}
 
-/* ---------- FS ---------- */
-function loadFS(){
-  try{
+  /* ---------- FS ---------- */
+  function loadFS(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      return raw ? JSON.parse(raw) : {
+        "index.html":"<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>"
+      };
+    }catch{
+      return {"index.html":"<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>"};
+    }
+  }
+  function saveFS(){ localStorage.setItem(KEY, JSON.stringify(fs)); }
+  function renderList(){
+    list.innerHTML = "";
+    Object.keys(fs).sort().forEach(name=>{
+      const li=document.createElement("li");
+      li.dataset.name=name;
+      li.className = name===current ? "active":"";
+      const span=document.createElement("span"); span.textContent=name;
+      li.append(span);
+      li.onclick=()=>openFile(name);
+      list.appendChild(li);
+    });
+  }
+  function openFile(name){
+    if(!fs[name]) return;
+    current = name;
+    code.value = fs[name];
+    renderList();
+    preview(fs[name]);
+    if(document.body.classList.contains("mobile")) setView("editor");
+  }
+  function commit(){ if(!current) return; fs[current]=code.value; saveFS(); }
+
+  /* ---------- Preview ---------- */
+  function preview(html){
+    const s = String(html||"");
+    const isHTML = /^\s*<!doctype|^\s*<html|^\s*<head|^\s*<body/i.test(s);
+    frame.srcdoc = isHTML
+      ? s
+      : `<!doctype html><meta charset="utf-8"><title>Aperçu</title>
+         <pre style="margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap">${escapeHTML(s)}</pre>`;
+    if(document.body.classList.contains("mobile")) setView("preview");
+  }
+
+  /* ---------- IA ---------- */
+  async function generateAI(){
+    const query = promptInput.value.trim();
+    if(!query){ flash("Décris d'abord"); return; }
+    flash("Génération…");
+    try{
+      const res = await window.ai.generate(query); // fourni par ai.js
+      if(!res || !res.files){ flash("Aucune sortie"); return; }
+      for(const [path,content] of Object.entries(res.files)){
+        if(typeof content === "string") fs[path]=content;
+      }
+      saveFS(); renderList();
+      const htmlTarget = Object.keys(res.files).find(n=>/\.html?$/i.test(n)) || Object.keys(res.files)[0];
+      if(htmlTarget) openFile(htmlTarget);
+      flash("OK");
+    }catch(e){ console.error(e); flash("Erreur IA"); }
+  }
+
+  /* ---------- Sanitize ---------- */
+  function sanitizeFS(){
+    const suspicious = [
+      "function applyMobileMode","document.getElementById(\"rename\")",
+      "const KEY =","document.getElementById(\"ai-propose\")","openFile(name)"
+    ];
+    const defHTML="<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>";
+    let changed=false;
+    for(const [name,content] of Object.entries(fs)){
+      if(!/\.html?$/i.test(name)) continue;
+      const txt=String(content||"");
+      const hasScriptTag=/<script[\s>]/i.test(txt);
+      const looksLikeDump=suspicious.some(sig=>txt.includes(sig));
+      if(looksLikeDump && !hasScriptTag){ fs[name]=defHTML; changed=true; }
+    }
+    if(changed) saveFS();
+  }
+
+  /* ---------- Mobile ---------- */
+  function applyMobile(){
+    const mobile = matchMedia("(max-width:900px)").matches;
+    if(mobile){
+      document.body.classList.add("mobile");
+      const bar = document.querySelector(".tabs");
+      bar.style.display="flex";
+      bar.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+        bar.querySelectorAll("button").forEach(x=>x.classList.remove("active"));
+        b.classList.add("active");
+        setView(b.dataset.v);
+      });
+    }else{
+      document.body.classList.remove("mobile");
+      document.querySelector(".tabs").style.display="none";
+      setView("files");
+    }
+  }
+  function setView(v){
+    document.body.className = document.body.className.replace(/view-\w+/,"").trim();
+    document.body.classList.add("view-"+v);
+  }
+
+  /* ---------- Utils ---------- */
+  function escapeHTML(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+  function flash(t){ promptInput.value=""; promptInput.placeholder=t; setTimeout(()=>promptInput.placeholder="Décris ce que tu veux générer",1500); }
+})();  try{
     const raw = localStorage.getItem(KEY);
     return raw ? JSON.parse(raw) : {
       "index.html": "<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>"
