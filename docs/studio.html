@@ -1,40 +1,64 @@
 <!doctype html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#0b0f17">
-  <title>Studio</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="preconnect" href="https://cdn.jsdelivr.net">
-  <style>
-    :root{--bg:#0b0f17;--panel:#0f1522;--line:#1f2937;--text:#e5e7eb;--muted:#a3a3a3;--accent:#7c3aed;--accent2:#22d3ee}
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{margin:0;background:linear-gradient(180deg,#0a0e16 0%,#0b0f17 60%,#0c111c 100%);color:var(--text);font:14px/1.6 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial}
-    header{position:sticky;top:0;z-index:10;display:grid;gap:8px;align-items:center;grid-template-columns:auto 1fr auto auto auto auto auto auto auto auto;padding:10px 12px;background:rgba(15,21,34,.9);backdrop-filter:saturate(140%) blur(8px);border-bottom:1px solid var(--line)}
-    .logo{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:12px;background:linear-gradient(135deg,#0e1628,#0b1324);border:1px solid #10182a}
-    .dot{width:8px;height:8px;border-radius:999px;background:radial-gradient(circle at 30% 30%,#8b5cf6,transparent 60%),radial-gradient(circle at 70% 70%,#22d3ee,transparent 60%)}
-    header input,header button,header output{height:36px}
-    header input#prompt{width:100%;min-width:180px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:#0b1324;color:var(--text)}
-    header button{appearance:none;border:1px solid var(--line);background:linear-gradient(180deg,#182033,#12192b);color:var(--text);padding:0 12px;border-radius:10px;cursor:pointer}
-    header button.primary{background:linear-gradient(180deg,#6d28d9,#5b21b6);border-color:#7c3aed}
-    header output#status{min-width:140px;text-align:right;color:#c4b5fd}
-    #mobile-tabs{display:none;gap:8px;padding:8px 12px;background:#0f1522;border-bottom:1px solid var(--line)}
-    #mobile-tabs button{flex:1;border:1px solid var(--line);background:#121a2e;color:var(--text);padding:10px;border-radius:10px}
-    #mobile-tabs button.active{background:#18233c;border-color:#2b3a55}
-    main{height:calc(100% - 58px);display:grid;grid-template-columns:280px 1fr 1fr}
-    #files{border-right:1px solid var(--line);background:linear-gradient(180deg,#0c1323,#0a1020);overflow:auto}
-    #files .bar{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}
-    #files ul{list-style:none;margin:0;padding:8px}
-    #files li{padding:8px 10px;border-radius:10px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;color:#d1d5db;border:1px solid transparent}
-    #files li:hover{background:#0e1530;border-color:#1b2442}
-    #files li.active{background:linear-gradient(180deg,#121a35,#0e1530);border-color:#26314e}
-    #files .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    #editor{border-right:1px solid var(--line);background:linear-gradient(180deg,#0b1324,#0a1020)}
-    #code{width:100%;height:100%;border:0;outline:0;padding:14px 16px;resize:none;background:transparent;color:#e5e7eb;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:13.5px;line-height:1.55}
-    .preview{border-left:1px solid var(--line);background:#0b1324}
-    #frame{width:100%;height:100%;border:0;background:#0b1324}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f17">
+<title>Studio</title>
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+:root{--bg:#0b0f17;--panel:#0f1522;--line:#1f2937;--text:#e5e7eb;--accent:#7c3aed}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:#0b0f17;color:var(--text);font:14px/1.6 system-ui,Roboto,Arial;overflow:hidden;display:flex;flex-direction:column}
+header{display:flex;gap:8px;align-items:center;padding:10px 12px;background:#0f1522;border-bottom:1px solid var(--line)}
+header input{flex:1;min-width:0;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#0b1324;color:var(--text)}
+button{border:1px solid var(--line);border-radius:8px;padding:0 12px;height:34px;background:#141c2e;color:var(--text);cursor:pointer}
+button.primary{background:linear-gradient(180deg,#7c3aed,#5b21b6);border-color:#7c3aed}
+main{flex:1;display:grid;grid-template-columns:260px 1fr 1fr;min-height:0}
+aside{border-right:1px solid var(--line);background:#0c1323;overflow:auto}
+#list{list-style:none;margin:0;padding:8px}
+#list li{padding:8px;border-radius:8px;display:flex;justify-content:space-between;gap:8px;cursor:pointer}
+#list li.active{background:#121a35}
+#editor{border-right:1px solid var(--line);background:#0b1324}
+#code{width:100%;height:100%;border:0;outline:0;padding:14px 16px;background:transparent;color:var(--text);font-family:ui-monospace,Consolas,monospace}
+#frame{width:100%;height:100%;border:0;background:#0b1324}
+@media(max-width:900px){
+main{grid-template-columns:1fr}
+aside,#editor,.preview{display:none}
+body.view-files aside{display:block}
+body.view-editor #editor{display:block}
+body.view-preview .preview{display:block}
+.tabs{display:flex;gap:8px;padding:8px 12px;background:#0f1522;border-bottom:1px solid var(--line)}
+.tabs button{flex:1;border:1px solid var(--line);background:#121a2e;color:var(--text);padding:10px;border-radius:8px}
+.tabs button.active{background:#18233c}
+}
+</style>
+</head>
+<body class="view-files">
+<header>
+  <b>Studio</b>
+  <input id="prompt" placeholder="Décris ce que tu veux générer">
+  <button id="ai-propose" class="primary">IA Proposer</button>
+  <button id="save">Enregistrer</button>
+  <button id="preview">Aperçu</button>
+</header>
+
+<div class="tabs" style="display:none">
+  <button data-v="files" class="active">Fichiers</button>
+  <button data-v="editor">Éditeur</button>
+  <button data-v="preview">Aperçu</button>
+</div>
+
+<main>
+  <aside><ul id="list"></ul></aside>
+  <section id="editor"><textarea id="code"></textarea></section>
+  <section class="preview"><iframe id="frame" sandbox="allow-scripts"></iframe></section>
+</main>
+
+<script type="module" src="studio.js"></script>
+</body>
+</html>    #frame{width:100%;height:100%;border:0;background:#0b1324}
     .is-mobile main{display:block;height:calc(100vh - 116px)}
     .is-mobile #mobile-tabs{display:flex}
     .is-mobile #files,.is-mobile #editor,.is-mobile .preview{display:none}
