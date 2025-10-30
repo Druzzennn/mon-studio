@@ -2,97 +2,104 @@ const FS_KEY   = "studio.fs.v1";
 const CHAT_KEY = "studio.chat.v1";
 
 /* ===== Refs ===== */
-const framePC     = document.getElementById("frame");
-const leftPane    = document.getElementById("left");
-const gutter      = document.getElementById("gutter");
-
-const tabChat     = document.getElementById("tab-chat");
-const tabCode     = document.getElementById("tab-code");
-const codePanel   = document.getElementById("code-panel");
-const chatPanel   = document.getElementById("chat-panel");
-
-const listEl      = document.getElementById("list");
-const codeEl      = document.getElementById("code");
-
-const chatLog     = document.getElementById("chat-log");
-const chatInput   = document.getElementById("chat-input");
-const chatSend    = document.getElementById("chat-send");
-
-const saveBtn     = document.getElementById("save");
-const previewBtn  = document.getElementById("preview-btn");
-
-/* Mobile tabs */
-const mTabPreview = document.getElementById("m-tab-preview");
-const mTabCode    = document.getElementById("m-tab-code");
-const mTabChat    = document.getElementById("m-tab-chat");
+const framePC = document.getElementById("frame");
+const left    = document.getElementById("left");
+const gutter  = document.getElementById("gutter");
 
 let fs   = window.ai?.loadFS ? window.ai.loadFS() : {};
 let chat = loadChat();
 let current = null;
-let previewTarget = null; // fichier HTML rendu
+let previewTarget = null;
 let typingTimer = null;
 
-/* ===== Init ===== */
-init();
+/* ==== BOOT ==== */
+boot();
 
-function init(){
+function boot(){
+  setMobileClass(); window.addEventListener("resize", setMobileClass, {passive:true});
+
   ensureDefaultFS();
   restoreLeftWidth();
   renderFiles();
   openFirst();
   renderChat();
+  refreshPreview();
 
-  // Onglets PC
-  tabChat.addEventListener("click", ()=>selectLeft("chat"));
-  tabCode.addEventListener("click", ()=>selectLeft("code"));
+  wireEvents();
+  selectLeft("chat");
+  if (isMobile()) selectMobile("preview");
+}
 
-  // Onglets Mobile (vues exclusives)
-  mTabPreview.addEventListener("click", ()=>selectMobile("preview"));
-  mTabCode.addEventListener("click", ()=>{ selectLeft("code"); selectMobile("code"); });
-  mTabChat.addEventListener("click", ()=>{ selectLeft("chat"); selectMobile("chat"); });
+/* ==== Mobile/PC detect ==== */
+function isMobile(){
+  return window.matchMedia("(max-width: 1024px)").matches || (navigator.maxTouchPoints|0) > 0;
+}
+function setMobileClass(){
+  document.body.classList.toggle("is-mobile", isMobile());
+}
 
-  // Chat
-  chatSend.addEventListener("click", sendChat);
-  chatInput.addEventListener("keydown", e=>{
+/* ==== Event wiring (avec DELEGATION robuste) ==== */
+function wireEvents(){
+  // Boutons globaux
+  document.addEventListener("click", (e)=>{
+    const t = e.target;
+
+    // PC tabs
+    if (t.closest && t.closest("#tab-chat")) { e.preventDefault(); selectLeft("chat"); return; }
+    if (t.closest && t.closest("#tab-code")) { e.preventDefault(); selectLeft("code"); return; }
+
+    // Mobile tabs
+    if (t.closest && t.closest("#m-tab-preview")) { e.preventDefault(); selectMobile("preview"); return; }
+    if (t.closest && t.closest("#m-tab-code"))    { e.preventDefault(); selectLeft("code"); selectMobile("code"); return; }
+    if (t.closest && t.closest("#m-tab-chat"))    { e.preventDefault(); selectLeft("chat"); selectMobile("chat"); return; }
+
+    // Save / Preview
+    if (t.closest && t.closest("#save"))        { e.preventDefault(); commit(); return; }
+    if (t.closest && t.closest("#preview-btn")) { e.preventDefault(); refreshPreview(true); return; }
+
+    // Fichiers
+    const li = t.closest && t.closest("#list li");
+    if (li && li.dataset && li.dataset.name){ e.preventDefault(); openFile(li.dataset.name); return; }
+
+    // Chat send
+    if (t.closest && t.closest("#chat-send")){ e.preventDefault(); sendChat(); return; }
+  });
+
+  // Chat input
+  const chatInput = document.getElementById("chat-input");
+  chatInput.addEventListener("keydown", (e)=>{
     if (e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendChat(); }
   });
   chatInput.addEventListener("input", autoGrowChat);
   autoGrowChat();
 
-  // Code editing
+  // Code input
+  const codeEl = document.getElementById("code");
   codeEl.addEventListener("input", ()=>{
     clearTimeout(typingTimer);
     typingTimer = setTimeout(()=>{ commit(); refreshPreview(); }, 120);
   });
 
-  // Save/Preview
-  saveBtn.addEventListener("click", ()=> commit());
-  previewBtn.addEventListener("click", ()=> refreshPreview(true));
-
-  // Gutter
+  // Gutter (drag)
   setupGutter();
-
-  // États init
-  selectLeft("chat");       // PC par défaut
-  selectMobile("preview");  // Mobile par défaut
 }
 
-/* ===== FS / Files ===== */
+/* ==== FS ==== */
 function ensureDefaultFS(){
-  if (!Object.keys(fs).length) {
+  if (!Object.keys(fs).length){
     fs["index.html"] = "<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>";
     saveFS(fs);
   }
 }
 function saveFS(obj){ localStorage.setItem(FS_KEY, JSON.stringify(obj)); }
 function renderFiles(){
+  const listEl = document.getElementById("list");
   listEl.innerHTML = "";
   Object.keys(fs).sort().forEach(name=>{
     const li=document.createElement("li");
     li.dataset.name=name;
     li.className = name===current ? "active":"";
     li.textContent = name;
-    li.addEventListener("click", ()=> openFile(name));
     listEl.appendChild(li);
   });
 }
@@ -100,19 +107,20 @@ function openFirst(){ const first = Object.keys(fs)[0]; if (first) openFile(firs
 function openFile(name){
   if(!fs[name]) return;
   current = name;
-  codeEl.value = fs[name];
+  document.getElementById("code").value = fs[name];
   renderFiles();
   if (/\.html?$/i.test(name)) previewTarget = name;
   refreshPreview();
 }
 function commit(){
   if(!current) return;
+  const codeEl = document.getElementById("code");
   fs[current] = codeEl.value;
   if (window.ai?.applyFiles) window.ai.applyFiles({[current]: codeEl.value});
   else saveFS(fs);
 }
 
-/* ===== Preview ===== */
+/* ==== Preview ==== */
 function isFullDoc(s){ return /^\s*<!doctype|^\s*<html|^\s*<head|^\s*<body/i.test(s); }
 function looksLikeFragment(s){ return /<([a-zA-Z][\w:-]*)(\s[^>]*)?>/m.test(s); }
 function wrapDoc(inner){
@@ -141,25 +149,26 @@ function refreshPreview(force=false){
   if (force) framePC.focus();
 }
 
-/* ===== Chat ===== */
+/* ==== Chat ==== */
 function loadChat(){ try{ const raw=localStorage.getItem(CHAT_KEY); return raw?JSON.parse(raw):[]; } catch{ return []; } }
 function saveChat(){ localStorage.setItem(CHAT_KEY, JSON.stringify(chat)); }
 function addMsg(role, text){ chat.push({ role, text, ts: Date.now() }); saveChat(); }
 function renderChat(){
-  chatLog.innerHTML = "";
+  const log = document.getElementById("chat-log");
+  log.innerHTML = "";
   for(const m of chat){
     const n = document.createElement("div");
     n.className = "msg " + (m.role==="user"?"user":"bot");
     n.textContent = m.text;
-    chatLog.appendChild(n);
+    log.appendChild(n);
   }
-  chatLog.scrollTop = chatLog.scrollHeight;
+  log.scrollTop = log.scrollHeight;
 }
 function buildPromptFromChat(){
   const names = Object.keys(fs).join(", ");
   let convo =
 `Contexte projet. Fichiers existants: ${names}.
-Réponds en JSON strict {"files":{"path":"content"}, "reply":"bref résumé de ce que tu as fait et pourquoi"} quand tu modifies/ajoutes des fichiers.
+Réponds en JSON strict {"files":{"path":"content"}, "reply":"bref résumé clair de ce que tu as fait et pourquoi"} quand tu modifies/ajoutes des fichiers.
 Fragments HTML acceptés. Pas de \`\`\`, pas de texte hors JSON.
 
 Conversation:
@@ -170,20 +179,18 @@ Conversation:
   return convo;
 }
 async function sendChat(){
-  const text = chatInput.value.trim();
+  const input = document.getElementById("chat-input");
+  const text = input.value.trim();
   if(!text) return;
   addMsg("user", text); renderChat();
-  chatInput.value=""; autoGrowChat();
+  input.value=""; autoGrowChat();
   lockChat(true);
 
   try{
     const prompt = buildPromptFromChat();
     const res = await window.ai.generate(prompt);
-
-    const reply = res?.reply ? String(res.reply) : null;
     const files = res?.files || {};
-    const keys = Object.keys(files);
-
+    const keys  = Object.keys(files);
     if (keys.length){
       fs = window.ai.loadFS();
       renderFiles();
@@ -192,49 +199,61 @@ async function sendChat(){
     } else {
       refreshPreview();
     }
-    addMsg("assistant", reply ?? (keys.length ? `OK • ${keys.length} fichier(s) mis à jour` : `Aucune modification`));
-    renderChat();
-  }catch(e){
-    addMsg("assistant", "Erreur: " + String(e));
-    renderChat();
-  }finally{
+    const reply = res?.reply ? String(res.reply) : (keys.length ? `Modifs: ${keys.join(", ")}` : `Aucune modification`);
+    addMsg("assistant", reply); renderChat();
+  } catch(e){
+    addMsg("assistant", "Erreur: " + String(e)); renderChat();
+  } finally {
     lockChat(false);
   }
 }
 function autoGrowChat(){
-  chatInput.style.height="auto";
-  chatInput.style.height=Math.min(Math.max(chatInput.scrollHeight,64),180)+"px";
+  const input = document.getElementById("chat-input");
+  input.style.height="auto";
+  input.style.height=Math.min(Math.max(input.scrollHeight,64),180)+"px";
 }
 function lockChat(b){
-  chatSend.disabled = b;
-  chatSend.textContent = b ? "IA…" : "Envoyer";
+  const btn = document.getElementById("chat-send");
+  btn.disabled = b;
+  btn.textContent = b ? "IA…" : "Envoyer";
 }
 
-/* ===== Tabs / Layout ===== */
+/* ==== Tabs / Layout ==== */
 function selectLeft(which){
-  const isChat = which==="chat";
-  tabChat.classList.toggle("active", isChat);
-  tabCode.classList.toggle("active", !isChat);
-  chatPanel.classList.toggle("active", isChat);
-  codePanel.classList.toggle("active", !isChat);
+  const chatBtn = document.getElementById("tab-chat");
+  const codeBtn = document.getElementById("tab-code");
+  const chatP   = document.getElementById("chat-panel");
+  const codeP   = document.getElementById("code-panel");
+  const isChat  = which==="chat";
+  chatBtn.classList.toggle("active", isChat);
+  codeBtn.classList.toggle("active", !isChat);
+  chatP.classList.toggle("active", isChat);
+  codeP.classList.toggle("active", !isChat);
 }
 function selectMobile(which){
+  if (!document.body.classList.contains("is-mobile")) return; // pas en mode mobile
   document.body.classList.remove("v-preview","v-code","v-chat");
   if (which==="preview"){
     document.body.classList.add("v-preview");
-    mTabPreview.classList.add("active"); mTabCode.classList.remove("active"); mTabChat.classList.remove("active");
+    document.getElementById("m-tab-preview").classList.add("active");
+    document.getElementById("m-tab-code").classList.remove("active");
+    document.getElementById("m-tab-chat").classList.remove("active");
   } else if (which==="code"){
     document.body.classList.add("v-code");
-    mTabCode.classList.add("active"); mTabPreview.classList.remove("active"); mTabChat.classList.remove("active");
+    document.getElementById("m-tab-code").classList.add("active");
+    document.getElementById("m-tab-preview").classList.remove("active");
+    document.getElementById("m-tab-chat").classList.remove("active");
     selectLeft("code");
   } else {
     document.body.classList.add("v-chat");
-    mTabChat.classList.add("active"); mTabPreview.classList.remove("active"); mTabCode.classList.remove("active");
+    document.getElementById("m-tab-chat").classList.add("active");
+    document.getElementById("m-tab-preview").classList.remove("active");
+    document.getElementById("m-tab-code").classList.remove("active");
     selectLeft("chat");
   }
 }
 
-/* ===== Gutter (drag robuste, bornes, arrêt net) ===== */
+/* ==== Gutter (drag borné, arrêt net) ==== */
 function setupGutter(){
   let dragging=false, pid=null, startX=0, startW=0;
 
@@ -248,7 +267,7 @@ function setupGutter(){
     const newW = Math.min(maxPx, Math.max(minPx, startW + dx));
     document.documentElement.style.setProperty("--leftw", newW+"px");
   };
-  const endDrag = (e)=>{
+  const endDrag = ()=>{
     if(!dragging) return;
     dragging=false;
     if (pid!=null) { try{ gutter.releasePointerCapture(pid); }catch{} pid=null; }
@@ -261,8 +280,9 @@ function setupGutter(){
   };
 
   gutter.addEventListener("pointerdown", (e)=>{
+    if (document.body.classList.contains("is-mobile")) return; // pas de slider en mobile
     dragging=true; pid=e.pointerId;
-    startX=e.clientX; startW=leftPane.getBoundingClientRect().width;
+    startX=e.clientX; startW=left.getBoundingClientRect().width;
     try{ gutter.setPointerCapture(pid); }catch{}
     document.body.style.userSelect="none";
     window.addEventListener("pointermove", onMove, { passive:true });
@@ -281,6 +301,3 @@ function restoreLeftWidth(){
   const w = localStorage.getItem("studio.leftw");
   if (w) document.documentElement.style.setProperty("--leftw", w);
 }
-
-/* ===== Helpers ===== */
-function loadChat(){ try{ const raw=localStorage.getItem(CHAT_KEY); return raw?JSON.parse(raw):[]; } catch{ return []; } }
