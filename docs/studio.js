@@ -18,17 +18,22 @@ function boot(){
   renderList();
   openFile(Object.keys(fs)[0]);
 
-  qs("#save").onclick = ()=>{ commit(); flash("Enregistré"); };
-  qs("#preview").onclick = ()=> preview(fs[current]||"");
-  qs("#ai-propose").onclick = onGenerate;
+  q("#save").onclick = ()=>{ commit(); flash("Enregistré"); };
+  q("#preview").onclick = ()=> preview(fs[current]||"");
+  q("#ai-propose").onclick = onGenerate;
 
   code.addEventListener("input", ()=>{
     clearTimeout(typingTimer);
-    typingTimer = setTimeout(()=>{ commit(); preview(fs[current]||""); }, 250);
+    typingTimer = setTimeout(()=>{ commit(); preview(fs[current]||""); }, 200);
   });
+
+  // Par défaut sur mobile : montrer l’éditeur (évite zone 2px)
+  if (isMobile()) setView("editor");
 }
 
-function qs(s){ return document.querySelector(s); }
+function q(s){ return document.querySelector(s); }
+function isMobile(){ return matchMedia("(max-width:900px)").matches; }
+
 function ensureDefault(){
   if (!Object.keys(fs).length) fs["index.html"] = "<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>";
   saveFS(fs);
@@ -53,7 +58,7 @@ function openFile(name){
   code.value = fs[name];
   renderList();
   preview(fs[name]);
-  if(document.body.classList.contains("mobile")) setView("editor");
+  if (isMobile()) setView("editor");
 }
 
 function commit(){
@@ -63,76 +68,46 @@ function commit(){
 }
 
 /* ---------- Preview intelligente ---------- */
-function isFullDocument(s){
-  return /^\s*<!doctype|^\s*<html|^\s*<head|^\s*<body/i.test(s);
-}
-function looksLikeHtmlFragment(s){
-  // contient au moins une balise HTML
-  return /<([a-zA-Z][\w:-]*)(\s[^>]*)?>/m.test(s);
-}
+function isFullDocument(s){ return /^\s*<!doctype|^\s*<html|^\s*<head|^\s*<body/i.test(s); }
+function looksLikeHtmlFragment(s){ return /<([a-zA-Z][\w:-]*)(\s[^>]*)?>/m.test(s); }
 function wrapAsDocument(inner){
-  return (
-    "<!doctype html><html><head><meta charset='utf-8'>" +
-    "<meta name='viewport' content='width=device-width, initial-scale=1'>" +
-    "<title>Aperçu</title>" +
-    "<style>body{margin:16px;font:14px system-ui;color:#e5e7eb;background:#0b1324}</style>" +
-    "</head><body>" + inner + "</body></html>"
-  );
+  return "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>Aperçu</title><style>body{margin:16px;font:14px system-ui;color:#e5e7eb;background:#0b1324}</style></head><body>"+inner+"</body></html>";
 }
 function preview(html){
   const s = String(html || "");
   let doc;
-  if (isFullDocument(s)) {
-    doc = s;
-  } else if (looksLikeHtmlFragment(s)) {
-    // cas PC: fragment tel que <div ...> → on l'enveloppe
-    doc = wrapAsDocument(s);
-  } else {
-    // simple texte → on montre lisiblement
-    const pre = "<pre style='margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap'>"
-              + escapeHTML(s) + "</pre>";
-    doc = wrapAsDocument(pre);
-  }
+  if (isFullDocument(s)) doc = s;
+  else if (looksLikeHtmlFragment(s)) doc = wrapAsDocument(s);
+  else doc = wrapAsDocument("<pre style='margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap'>"+escapeHTML(s)+"</pre>");
   frame.srcdoc = doc;
-  if (document.body.classList.contains("mobile")) setView("preview");
+  if (isMobile()) setView("preview");
 }
 
 /* ---------- IA ---------- */
 async function onGenerate(){
-  const q = promptInput.value.trim();
-  if(!q){ flash("Décris d'abord"); return; }
+  const qy = promptInput.value.trim();
+  if(!qy){ flash("Décris d'abord"); return; }
   flash("IA…");
-  const res = await window.ai.generate(q);
+  const res = await window.ai.generate(qy);
   const files = res?.files || {};
   const keys = Object.keys(files);
   if (!keys.length){
     flash(res?.error ? ("Erreur IA: "+res.error) : "Aucune sortie IA");
     return;
   }
-  // Recharger le FS et ouvrir le 1er HTML ou le 1er fichier
   fs = window.ai.loadFS();
   renderList();
   const target = keys.find(n=>/\.html?$/i.test(n)) || keys[0];
   if (target) openFile(target);
-  // Forcer l'aperçu sur mobile (ceinture + bretelles)
+  // Forcer l’aperçu, puis permettre de revenir à l’éditeur via l’onglet
   setView("preview");
   preview(fs[target] || fs[current] || "");
   flash("OK");
 }
 
-/* ---------- Utils ---------- */
-function escapeHTML(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
-
-function flash(t){
-  promptInput.value="";
-  promptInput.placeholder=t;
-  setTimeout(()=>promptInput.placeholder="Décris ce que tu veux générer",1500);
-}
-
-/* ---------- Mobile ---------- */
+/* ---------- Tabs / Mobile ---------- */
 function applyMobile(){
-  const mobile = matchMedia("(max-width:900px)").matches;
-  if(mobile){
+  if (isMobile()){
     document.body.classList.add("mobile");
     tabsBar.style.display = "flex";
     tabsBar.querySelectorAll("button").forEach(b=>b.onclick=()=>{
@@ -147,6 +122,14 @@ function applyMobile(){
   }
 }
 function setView(v){
-  document.body.className = document.body.className.replace(/view-\w+/,"").trim();
+  document.body.className = document.body.className.replace(/view-\w+/g,"").trim();
   document.body.classList.add("view-"+v);
+  // activer visuel bouton
+  if (tabsBar.style.display !== "none"){
+    tabsBar.querySelectorAll("button").forEach(x=>x.classList.toggle("active", x.dataset.v===v));
+  }
 }
+
+/* ---------- Utils ---------- */
+function escapeHTML(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function flash(t){ promptInput.value=""; promptInput.placeholder=t; setTimeout(()=>promptInput.placeholder="Décris ce que tu veux générer",1500); }
