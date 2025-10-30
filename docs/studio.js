@@ -1,40 +1,154 @@
-const KEY = "studio.fs.v1";
+// Reset dur d'état et assainissement automatique
+const KEY = "studio.fs.v4";
 const list = document.getElementById("list");
 const code = document.getElementById("code");
 const frame = document.getElementById("frame");
 const promptInput = document.getElementById("prompt");
-const statusOut = document.getElementById("status");
-const tabs = document.querySelectorAll("#mobile-tabs button");
+const tabsBar = document.querySelector(".tabs");
 
 let fs = loadFS();
 let current = null;
-let history = {};
-let cursor = {};
 let typingTimer = null;
-let lock = false;
 
-function setStatus(t){ statusOut.textContent = t; }
-function setLock(v){
-  lock = v;
-  const ids = ["ai-propose","ai-analyze","new","rename","delete","save","download","import","preview","reset"];
-  ids.forEach(id => { const el = document.getElementById(id); if(el){ el.disabled=v; el.style.opacity = v?0.6:1; }});
-  promptInput.disabled = v;
-}
-function switchView(v){
-  if(!document.body.classList.contains("is-mobile")) return;
-  tabs.forEach(x=>x.classList.toggle("active", x.dataset.v===v));
-  document.body.classList.remove("view-files","view-editor","view-preview");
-  document.body.classList.add("view-"+v);
+init();
+
+function init(){
+  applyMobile();
+  sanitizeFS();               // <- supprime le "JS imprimé en texte"
+  renderList();
+  const first = Object.keys(fs)[0];
+  if(first) openFile(first); else preview("");
+
+  document.getElementById("save").onclick = ()=>{ commit(); flash("Enregistré"); };
+  document.getElementById("preview").onclick = ()=> preview(fs[current]||"");
+  document.getElementById("ai-propose").onclick = generateAI;
+  code.addEventListener("input", ()=>{
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(()=>{ commit(); preview(fs[current]||""); }, 250);
+  });
+
+  if ("serviceWorker" in navigator){
+    addEventListener("load", ()=>navigator.serviceWorker.register("sw.js"));
+  }
 }
 
-function applyMobileMode(){
-  const m = matchMedia("(max-width:900px)").matches;
-  if(m){
-    if(!document.body.classList.contains("is-mobile")){
-      document.body.classList.add("is-mobile","view-files");
-      tabs.forEach(b=>b.onclick=()=>switchView(b.dataset.v));
+/* ---------- FS ---------- */
+function loadFS(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    return raw ? JSON.parse(raw) : {
+      "index.html": "<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>"
+    };
+  }catch{
+    return {"index.html":"<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>"};
+  }
+}
+function saveFS(){ localStorage.setItem(KEY, JSON.stringify(fs)); }
+function renderList(){
+  list.innerHTML = "";
+  Object.keys(fs).sort().forEach(name=>{
+    const li = document.createElement("li");
+    li.dataset.name = name;
+    li.className = name===current ? "active" : "";
+    const span = document.createElement("span"); span.textContent = name;
+    li.append(span);
+    li.onclick = ()=> openFile(name);
+    list.appendChild(li);
+  });
+}
+function openFile(name){
+  if(!fs[name]) return;
+  current = name;
+  code.value = fs[name];
+  renderList();
+  preview(fs[name]);
+  if(document.body.classList.contains("mobile")) setView("editor");
+}
+function commit(){
+  if(!current) return;
+  fs[current] = code.value;
+  saveFS();
+}
+
+/* ---------- Prévisualisation ---------- */
+function preview(html){
+  const s = String(html||"");
+  const isHTML = /^\s*<!doctype|^\s*<html|^\s*<head|^\s*<body/i.test(s);
+  frame.srcdoc = isHTML
+    ? s
+    : `<!doctype html><meta charset="utf-8"><title>Aperçu</title>
+       <pre style="margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap">${escapeHTML(s)}</pre>`;
+  if(document.body.classList.contains("mobile")) setView("preview");
+}
+
+/* ---------- IA ---------- */
+async function generateAI(){
+  const query = promptInput.value.trim();
+  if(!query){ flash("Décris d'abord"); return; }
+  flash("Génération…");
+  try{
+    const res = await window.ai.generate(query);
+    if(!res || !res.files){ flash("Aucune sortie"); return; }
+    // merge safe
+    for(const [path,content] of Object.entries(res.files)){
+      if(typeof content !== "string") continue;
+      fs[path] = content;
     }
+    saveFS(); renderList();
+    const htmlTarget = Object.keys(res.files).find(n=>/\.html?$/i.test(n)) || Object.keys(res.files)[0];
+    if(htmlTarget) openFile(htmlTarget);
+    flash("OK");
+  }catch(e){ console.error(e); flash("Erreur IA"); }
+}
+
+/* ---------- Sanitize anti-texte ---------- */
+function sanitizeFS(){
+  const suspicious = [
+    "function applyMobileMode", "document.getElementById(\"rename\")",
+    "const KEY =", "document.getElementById(\"ai-propose\")",
+    "frame.srcdoc", "openFile(name)"
+  ];
+  const defHTML = "<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>";
+  let changed = false;
+
+  for(const [name,content] of Object.entries(fs)){
+    if(!/\.html?$/i.test(name)) continue;
+    const txt = String(content||"");
+    const hasScriptTag = /<script[\s>]/i.test(txt);
+    const looksLikeDump = suspicious.some(sig=>txt.includes(sig));
+    if(looksLikeDump && !hasScriptTag){
+      fs[name] = defHTML;
+      changed = true;
+    }
+  }
+  if(changed) saveFS();
+}
+
+/* ---------- Utilitaires UI ---------- */
+function escapeHTML(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function flash(t){ promptInput.value=""; promptInput.placeholder=t; setTimeout(()=>promptInput.placeholder="Décris ce que tu veux générer",1500); }
+
+/* ---------- Mobile ---------- */
+function applyMobile(){
+  const mobile = matchMedia("(max-width:900px)").matches;
+  if(mobile){
+    document.body.classList.add("mobile");
+    tabsBar.style.display = "flex";
+    tabsBar.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+      tabsBar.querySelectorAll("button").forEach(x=>x.classList.remove("active"));
+      b.classList.add("active");
+      setView(b.dataset.v);
+    });
   }else{
+    document.body.classList.remove("mobile");
+    tabsBar.style.display = "none";
+    setView("files");
+  }
+}
+function setView(v){
+  document.body.className = document.body.className.replace(/view-\w+/,"").trim();
+  document.body.classList.add("view-"+v);
+}  }else{
     document.body.classList.remove("is-mobile","view-files","view-editor","view-preview");
   }
 }
