@@ -21,23 +21,30 @@
     #list{list-style:none;margin:0;padding:8px}
     #list li{padding:8px;border-radius:8px;display:flex;justify-content:space-between;gap:8px;cursor:pointer}
     #list li.active{background:#121a35}
-    #editor{border-right:1px solid var(--line);background:#0b1324}
-    #code{width:100%;height:100%;border:0;outline:0;padding:14px 16px;background:transparent;color:var(--text);font-family:ui-monospace,Consolas,Menlo,monospace}
-    .preview{background:#0b1324}
+    #editor{border-right:1px solid var(--line);background:#0b1324;display:flex;min-height:0}
+    #code{width:100%;height:100%;border:0;outline:0;padding:14px 16px;background:transparent;color:var(--text);font-family:ui-monospace,Consolas,Menlo,monospace;flex:1;min-height:0}
+    .preview{background:#0b1324;min-height:0}
     #frame{width:100%;height:100%;border:0;background:#0b1324}
+    /* --- Mobile --- */
     @media (max-width:900px){
-      main{grid-template-columns:1fr}
-      aside,#editor,.preview{display:none}
-      body.view-files aside{display:block}
-      body.view-editor #editor{display:block}
-      body.view-preview .preview{display:block}
-      .tabs{display:flex;gap:8px;padding:8px 12px;background:#0f1522;border-bottom:1px solid var(--line)}
+      body{overflow:auto} /* autoriser le scroll */
+      main{grid-template-columns:1fr;min-height:0}
+      /* on affiche par défaut TOUT, puis on masque selon l’onglet actif */
+      aside,#editor,.preview{display:block}
+      aside{height:34vh;overflow:auto;border-bottom:1px solid var(--line)}
+      #editor{height:38vh;border-bottom:1px solid var(--line)}
+      .preview{height:48vh}
+      .tabs{display:flex;gap:8px;padding:8px 12px;background:#0f1522;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:1}
       .tabs button{flex:1;border:1px solid var(--line);background:#121a2e;color:var(--text);padding:10px;border-radius:8px}
       .tabs button.active{background:#18233c}
+      /* masques ciblés par vue */
+      body.view-files #editor, body.view-files .preview {display:none}
+      body.view-editor aside, body.view-editor .preview {display:none}
+      body.view-preview aside, body.view-preview #editor {display:none}
     }
   </style>
 </head>
-<body class="view-files">
+<body class="view-editor">
   <header>
     <b>Studio</b>
     <input id="prompt" placeholder="Décris ce que tu veux générer">
@@ -47,8 +54,8 @@
   </header>
 
   <div class="tabs" style="display:none">
-    <button data-v="files" class="active">Fichiers</button>
-    <button data-v="editor">Éditeur</button>
+    <button data-v="files">Fichiers</button>
+    <button data-v="editor" class="active">Éditeur</button>
     <button data-v="preview">Aperçu</button>
   </div>
 
@@ -58,7 +65,6 @@
     <section class="preview"><iframe id="frame" sandbox="allow-scripts"></iframe></section>
   </main>
 
-  <!-- ai.js fournit window.ai.{loadFS,applyFiles,generate} -->
   <script type="module" src="ai.js"></script>
   <script type="module" src="studio.js"></script>
 </body>
