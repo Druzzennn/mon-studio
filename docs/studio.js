@@ -374,16 +374,68 @@ function injectExternalFiles(html){
 function makeDoc(s){
   const t = String(s || "");
   
+  // Envelopper dans un wrapper qui bloque TOUTES les interactions parent
+  const isolationScript = `
+<script>
+(function() {
+  // Bloquer l'accès au parent
+  try {
+    Object.defineProperty(window, 'parent', { get: function() { return window; } });
+    Object.defineProperty(window, 'top', { get: function() { return window; } });
+    Object.defineProperty(window, 'opener', { get: function() { return null; } });
+  } catch(e) {}
+  
+  // Bloquer window.open
+  window.open = function() { 
+    console.warn('window.open bloqué pour sécurité'); 
+    return null; 
+  };
+  
+  // Intercepter tous les liens pour bloquer target="_blank"
+  document.addEventListener('click', function(e) {
+    let el = e.target;
+    while (el && el.tagName !== 'A') el = el.parentElement;
+    if (el && el.tagName === 'A') {
+      const href = el.getAttribute('href');
+      if (href && (href.startsWith('http') || href.startsWith('//'))) {
+        e.preventDefault();
+        console.warn('Navigation externe bloquée:', href);
+        return false;
+      }
+      if (el.target === '_blank' || el.target === '_parent' || el.target === '_top') {
+        e.preventDefault();
+        console.warn('Navigation vers parent bloquée');
+        return false;
+      }
+    }
+  }, true);
+  
+  // Bloquer les formulaires vers parent
+  document.addEventListener('submit', function(e) {
+    const form = e.target;
+    if (form.target === '_blank' || form.target === '_parent' || form.target === '_top') {
+      e.preventDefault();
+      console.warn('Soumission de formulaire vers parent bloquée');
+      return false;
+    }
+  }, true);
+})();
+</script>`;
+  
   if (isFullDoc(t)) {
-    return injectExternalFiles(t);
+    const withIsolation = t.replace('</head>', isolationScript + '\n</head>');
+    return injectExternalFiles(withIsolation);
   }
   
   if (looksLikeFragment(t)) {
-    return injectExternalFiles(wrapDoc(t));
+    const wrapped = wrapDoc(t);
+    const withIsolation = wrapped.replace('</head>', isolationScript + '\n</head>');
+    return injectExternalFiles(withIsolation);
   }
   
   // Texte brut
-  return wrapDoc(`<pre style="margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap">${esc(t)}</pre>`);
+  const wrapped = wrapDoc(`<pre style="margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap">${esc(t)}</pre>`);
+  return wrapped.replace('</head>', isolationScript + '\n</head>');
 }
 
 function refreshPreview(force = false){
