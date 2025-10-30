@@ -1,5 +1,5 @@
-const CACHE = "studio-v1";
-const ASSETS = ["/studio.html", "/index.html", "/ai.js", "/manifest.webmanifest"];
+const CACHE = "studio-v2";
+const ASSETS = ["/studio.html", "/index.html", "/ai.js", "/studio.js", "/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -19,7 +19,7 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== location.origin) {
     e.respondWith(fetch(req).catch(() => caches.match(req)));
     return;
-    }
+  }
 
   if (ASSETS.includes(url.pathname)) {
     e.respondWith(
