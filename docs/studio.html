@@ -9,7 +9,7 @@
   <style>
     :root{
       --bg:#0b0f17; --panel:#0f1522; --line:#1f2937; --text:#e5e7eb; --sub:#9ca3af; --accent:#5b21b6;
-      --leftw:50vw; /* largeur panneau gauche (PC) */
+      --leftw:50vw; /* largeur initiale du panneau gauche (PC), persistance locale appliquée via JS */
     }
     *{box-sizing:border-box}
     html,body{height:100%;margin:0}
@@ -58,27 +58,22 @@
     #chat-input{flex:1;min-height:64px;max-height:180px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#0b1324;color:var(--text);resize:vertical}
     #chat-send{height:auto;padding:8px 14px}
 
-    /* ---- Mobile: une seule vue à la fois (Preview/Code/Chat) ---- */
+    /* ---- Mobile: UNE SEULE VUE à la fois (Preview/Code/Chat) en réutilisant le MÊME DOM ---- */
     .m-tabs{display:none}
     @media (max-width:900px){
-      main#layout{display:none} /* on masque le split PC */
       .m-tabs{display:flex;gap:8px;padding:8px 12px;background:#0f1522;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
       .m-tabs button{flex:1;border:1px solid var(--line);background:#121a2e;color:var(--text);padding:10px;border-radius:8px}
       .m-tabs button.active{background:#18233c}
-      .m-view{height:calc(100% - 50px);min-height:0}
-      .m-view > *{width:100%;height:100%}
-
-      /* vues exclusives via classes sur <body> */
-      #m-preview,#m-code,#m-chat{display:none}
-      body.m-preview #m-preview{display:block}
-      body.m-code    #m-code{display:flex}
-      body.m-chat    #m-chat{display:flex}
-      #m-preview iframe{width:100%;height:100%;border:0;background:#0b1324}
-      #m-code{background:#0f1522}
-      #m-code #editor{height:100%}
-      #m-code #code{height:100%}
-      #m-chat{background:#0f1522;flex-direction:column}
-      #m-chat #chat-log{flex:1}
+      #gutter{display:none}
+      main#layout{
+        grid-template-columns: 1fr; grid-template-rows: 1fr;
+      }
+      /* on cache tout par défaut, puis on affiche la vue choisie via classes sur <body> */
+      aside#left, section#preview{display:none}
+      body.m-preview section#preview{display:block}
+      body.m-code    aside#left{display:flex}
+      body.m-chat    aside#left{display:flex}
+      /* quand on est en mobile, on force l'onglet actif côté gauche selon la vue */
     }
   </style>
 </head>
@@ -97,7 +92,7 @@
     <button id="m-tab-chat">Chat IA</button>
   </div>
 
-  <!-- PC layout -->
+  <!-- PC layout (réutilisé par le mobile; AUCUN doublon d'ID) -->
   <main id="layout">
     <aside id="left">
       <div class="side-tabs">
@@ -123,21 +118,6 @@
 
     <section id="preview"><iframe id="frame" sandbox="allow-scripts"></iframe></section>
   </main>
-
-  <!-- Mobile views (UN SEUL DOM, pas de doublons d'IDs) -->
-  <div id="m-preview" class="m-view"><iframe sandbox="allow-scripts"></iframe></div>
-  <div id="m-code" class="m-view">
-    <div id="editor"><textarea id="code"></textarea></div>
-  </div>
-  <div id="m-chat" class="m-view">
-    <div id="chat-panel" style="display:flex;flex-direction:column;width:100%;height:100%">
-      <div id="chat-log"></div>
-      <div id="chat-input-row">
-        <textarea id="chat-input" placeholder="Décris ce que tu veux générer ou modifier"></textarea>
-        <button id="chat-send" class="primary" type="button">Envoyer</button>
-      </div>
-    </div>
-  </div>
 
   <script type="module" src="ai.js"></script>
   <script type="module" src="studio.js"></script>
