@@ -24,51 +24,40 @@ function boot(){
 
   code.addEventListener("input", ()=>{
     clearTimeout(typingTimer);
-    typingTimer = setTimeout(()=>{ commit(); preview(fs[current]||""); }, 250);
+    typingTimer=setTimeout(()=>{ commit(); preview(fs[current]||""); }, 250);
   });
 }
 
-function qs(sel){ return document.querySelector(sel); }
-function ensureDefault(){
-  if (!Object.keys(fs).length) fs["index.html"] = "<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>";
-  saveFS(fs);
-}
+function qs(s){ return document.querySelector(s); }
+function ensureDefault(){ if(!Object.keys(fs).length) { fs["index.html"]="<!doctype html><meta charset='utf-8'><title>Exemple</title><h1>Bonjour</h1>"; saveFS(fs);} }
 function saveFS(obj){ localStorage.setItem(KEY, JSON.stringify(obj)); }
 
 function renderList(){
-  list.innerHTML = "";
+  list.innerHTML="";
   Object.keys(fs).sort().forEach(name=>{
     const li=document.createElement("li");
-    li.dataset.name=name;
-    li.className = name===current ? "active":"";
-    li.textContent = name;
-    li.onclick = ()=> openFile(name);
+    li.dataset.name=name; li.className = name===current ? "active":"";
+    li.textContent=name; li.onclick=()=>openFile(name);
     list.appendChild(li);
   });
 }
 
 function openFile(name){
   if(!fs[name]) return;
-  current = name;
-  code.value = fs[name];
-  renderList();
-  preview(fs[name]);
+  current=name; code.value=fs[name]; renderList(); preview(fs[name]);
   if(document.body.classList.contains("mobile")) setView("editor");
 }
 
 function commit(){
   if(!current) return;
-  fs[current] = code.value;
+  fs[current]=code.value;
   window.ai?.applyFiles ? window.ai.applyFiles({[current]: code.value}) : saveFS(fs);
 }
 
 function preview(html){
-  const s = String(html||"");
-  const isHTML = /^\s*<!doctype|^\s*<html|^\s*<head|^\s*<body/i.test(s);
-  frame.srcdoc = isHTML
-    ? s
-    : `<!doctype html><meta charset="utf-8"><title>Aperçu</title>
-       <pre style="margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap">${escapeHTML(s)}</pre>`;
+  const s=String(html||"");
+  const isHTML=/^\s*<!doctype|^\s*<html|^\s*<head|^\s*<body/i.test(s);
+  frame.srcdoc = isHTML ? s : "<!doctype html><meta charset='utf-8'><title>Aperçu</title><pre style='margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap'>"+escapeHTML(s)+"</pre>";
   if(document.body.classList.contains("mobile")) setView("preview");
 }
 
@@ -77,11 +66,12 @@ async function onGenerate(){
   if(!q){ flash("Décris d'abord"); return; }
   flash("IA…");
   const res = await window.ai.generate(q);
-  if (res?.error) { flash(`Erreur IA: ${res.error}`); return; }
   const files = res?.files || {};
   const keys = Object.keys(files);
-  if (!keys.length) { flash("Aucune sortie IA"); return; }
-  // merge déjà fait côté ai.js, on met à jour vue et ouvre le 1er HTML
+  if (!keys.length){
+    flash(res?.error ? ("Erreur IA: "+res.error) : "Aucune sortie IA");
+    return;
+  }
   fs = window.ai.loadFS();
   renderList();
   const target = keys.find(n=>/\.html?$/i.test(n)) || keys[0];
@@ -93,19 +83,17 @@ function escapeHTML(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','
 function flash(t){ promptInput.value=""; promptInput.placeholder=t; setTimeout(()=>promptInput.placeholder="Décris ce que tu veux générer",1500); }
 
 function applyMobile(){
-  const mobile = matchMedia("(max-width:900px)").matches;
+  const mobile=matchMedia("(max-width:900px)").matches;
   if(mobile){
     document.body.classList.add("mobile");
-    tabsBar.style.display = "flex";
+    tabsBar.style.display="flex";
     tabsBar.querySelectorAll("button").forEach(b=>b.onclick=()=>{
       tabsBar.querySelectorAll("button").forEach(x=>x.classList.remove("active"));
-      b.classList.add("active");
-      setView(b.dataset.v);
+      b.classList.add("active"); setView(b.dataset.v);
     });
   }else{
     document.body.classList.remove("mobile");
-    tabsBar.style.display = "none";
-    setView("files");
+    tabsBar.style.display="none"; setView("files");
   }
 }
 function setView(v){
