@@ -1,8 +1,8 @@
 const FS_KEY   = "studio.fs.v1";
 const CHAT_KEY = "studio.chat.v1";
 
-/* Refs */
-let framePC   = document.getElementById("frame");
+/* Refs - framePC sera réassigné dynamiquement */
+let framePC = null;
 const leftPane  = document.getElementById("left");
 const gutter    = document.getElementById("gutter");
 const consoleEl = document.getElementById("console");
@@ -41,6 +41,8 @@ let pvFile = localStorage.getItem("studio.pvFile") || "";
 init();
 
 function init(){
+  framePC = document.getElementById("frame");
+  
   ensureDefaultFS();
   restoreLeftWidth();
   renderFiles();
@@ -50,23 +52,47 @@ function init(){
   refreshPreview();
   setupConsoleCapture();
 
-  // Onglets PC
-  tabChat.addEventListener("click", () => selectLeft("chat"));
-  tabCode.addEventListener("click", () => selectLeft("code"));
+  // Onglets PC - AVEC stopPropagation pour éviter les conflits
+  tabChat.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectLeft("chat");
+  }, true);
+  
+  tabCode.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectLeft("code");
+  }, true);
 
-  // Onglets Mobile
-  mTabPreview.addEventListener("click", () => selectMobile("preview"));
-  mTabCode.addEventListener("click", () => selectMobile("code"));
-  mTabChat.addEventListener("click", () => selectMobile("chat"));
+  // Onglets Mobile - AVEC stopPropagation
+  mTabPreview.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectMobile("preview");
+  }, true);
+  
+  mTabCode.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectMobile("code");
+  }, true);
+  
+  mTabChat.addEventListener("click", (e) => {
+    e.stopPropagation();
+    selectMobile("chat");
+  }, true);
 
   // Chat
-  chatSend.addEventListener("click", sendChat);
+  chatSend.addEventListener("click", (e) => {
+    e.stopPropagation();
+    sendChat();
+  }, true);
+  
   chatInput.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) { 
       e.preventDefault(); 
+      e.stopPropagation();
       sendChat(); 
     }
-  });
+  }, true);
+  
   chatInput.addEventListener("input", autoGrowChat);
   autoGrowChat();
 
@@ -78,22 +104,30 @@ function init(){
       refreshPreview(); 
     }, 300);
   });
+  
   codeEl.addEventListener("keydown", e => {
     // Tab indentation
     if (e.key === "Tab") {
       e.preventDefault();
+      e.stopPropagation();
       const start = codeEl.selectionStart;
       const end = codeEl.selectionEnd;
       codeEl.value = codeEl.value.substring(0, start) + "  " + codeEl.value.substring(end);
       codeEl.selectionStart = codeEl.selectionEnd = start + 2;
     }
-  });
+  }, true);
 
   // Nouveau fichier
-  newFileBtn.addEventListener("click", createNewFile);
+  newFileBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    createNewFile();
+  }, true);
 
   // Preview select
-  pvSelect.addEventListener("change", onPreviewSelect);
+  pvSelect.addEventListener("change", (e) => {
+    e.stopPropagation();
+    onPreviewSelect();
+  }, true);
 
   // Gutter
   setupGutter();
@@ -102,9 +136,10 @@ function init(){
   document.addEventListener("keydown", e => {
     if ((e.ctrlKey || e.metaKey) && e.key === "s") {
       e.preventDefault();
+      e.stopPropagation();
       commitAuto();
     }
-  });
+  }, true);
 
   // États init
   selectLeft("chat");
@@ -181,10 +216,14 @@ function renderFiles(){
     delBtn.addEventListener("click", e => {
       e.stopPropagation();
       deleteFile(name);
-    });
+    }, true);
     li.appendChild(delBtn);
     
-    li.addEventListener("click", () => openFile(name));
+    li.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openFile(name);
+    }, true);
+    
     listEl.appendChild(li);
   });
 }
@@ -267,7 +306,7 @@ function deleteFile(name){
 function showNotification(text){
   const notif = document.createElement("div");
   notif.textContent = text;
-  notif.style.cssText = "position:fixed;top:20px;right:20px;background:#18233c;color:#e5e7eb;padding:12px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999;animation:slideIn 0.3s";
+  notif.style.cssText = "position:fixed;top:20px;right:20px;background:#18233c;color:#e5e7eb;padding:12px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:99999;animation:slideIn 0.3s;pointer-events:none";
   document.body.appendChild(notif);
   setTimeout(() => {
     notif.style.animation = "slideOut 0.3s";
@@ -374,68 +413,16 @@ function injectExternalFiles(html){
 function makeDoc(s){
   const t = String(s || "");
   
-  // Envelopper dans un wrapper qui bloque TOUTES les interactions parent
-  const isolationScript = `
-<script>
-(function() {
-  // Bloquer l'accès au parent
-  try {
-    Object.defineProperty(window, 'parent', { get: function() { return window; } });
-    Object.defineProperty(window, 'top', { get: function() { return window; } });
-    Object.defineProperty(window, 'opener', { get: function() { return null; } });
-  } catch(e) {}
-  
-  // Bloquer window.open
-  window.open = function() { 
-    console.warn('window.open bloqué pour sécurité'); 
-    return null; 
-  };
-  
-  // Intercepter tous les liens pour bloquer target="_blank"
-  document.addEventListener('click', function(e) {
-    let el = e.target;
-    while (el && el.tagName !== 'A') el = el.parentElement;
-    if (el && el.tagName === 'A') {
-      const href = el.getAttribute('href');
-      if (href && (href.startsWith('http') || href.startsWith('//'))) {
-        e.preventDefault();
-        console.warn('Navigation externe bloquée:', href);
-        return false;
-      }
-      if (el.target === '_blank' || el.target === '_parent' || el.target === '_top') {
-        e.preventDefault();
-        console.warn('Navigation vers parent bloquée');
-        return false;
-      }
-    }
-  }, true);
-  
-  // Bloquer les formulaires vers parent
-  document.addEventListener('submit', function(e) {
-    const form = e.target;
-    if (form.target === '_blank' || form.target === '_parent' || form.target === '_top') {
-      e.preventDefault();
-      console.warn('Soumission de formulaire vers parent bloquée');
-      return false;
-    }
-  }, true);
-})();
-</script>`;
-  
   if (isFullDoc(t)) {
-    const withIsolation = t.replace('</head>', isolationScript + '\n</head>');
-    return injectExternalFiles(withIsolation);
+    return injectExternalFiles(t);
   }
   
   if (looksLikeFragment(t)) {
-    const wrapped = wrapDoc(t);
-    const withIsolation = wrapped.replace('</head>', isolationScript + '\n</head>');
-    return injectExternalFiles(withIsolation);
+    return injectExternalFiles(wrapDoc(t));
   }
   
   // Texte brut
-  const wrapped = wrapDoc(`<pre style="margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap">${esc(t)}</pre>`);
-  return wrapped.replace('</head>', isolationScript + '\n</head>');
+  return wrapDoc(`<pre style="margin:16px;font:13px ui-monospace,Consolas,Menlo,monospace;white-space:pre-wrap">${esc(t)}</pre>`);
 }
 
 function refreshPreview(force = false){
@@ -443,22 +430,15 @@ function refreshPreview(force = false){
   let content = fs[tgt.name] || "";
   const doc = makeDoc(content);
   
-  // Recréer l'iframe pour isolation totale
-  const oldFrame = framePC;
-  const newFrame = document.createElement('iframe');
-  newFrame.id = 'frame';
-  newFrame.sandbox = 'allow-scripts';
-  newFrame.style.cssText = 'width:100%;height:100%;border:0;background:#0b1324;position:relative;z-index:1';
+  // Ne PAS recréer l'iframe, juste mettre à jour srcdoc
+  if (!framePC) {
+    framePC = document.getElementById("frame");
+  }
   
-  oldFrame.parentNode.replaceChild(newFrame, oldFrame);
-  
-  // Réassigner la référence globale
-  window.framePC = newFrame;
-  
-  newFrame.srcdoc = doc;
+  framePC.srcdoc = doc;
   consoleEl.innerHTML = "";
   consoleEl.classList.remove("visible");
-  if (force) newFrame.focus();
+  if (force && framePC) framePC.focus();
 }
 
 /* Console capture */
@@ -632,6 +612,7 @@ function setupGutter(){
   };
 
   gutter.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
     dragging = true; 
     pid = e.pointerId;
     startX = e.clientX; 
